@@ -655,12 +655,12 @@ async fn main() -> Result<(), BoxError> {
     );
 
     let addr = ([127, 0, 0, 1], port).into();
-
+    let state = (module, engine);
     let server = Server::bind(&addr).serve(make_service_fn(move |_| {
-        let (module, engine) = (module.clone(), engine.clone());
+        let state = state.clone();
         async move {
             Ok::<_, anyhow::Error>(service_fn(move |req| {
-                let (module, engine) = (module.clone(), engine.clone());
+                let (module, engine) = state.clone();
                 async move {
                     Ok::<_, anyhow::Error>(
                         Handler::new(req)
