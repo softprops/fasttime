@@ -7,7 +7,7 @@ use hyper::{
 use log::debug;
 use std::{cell::RefCell, error::Error, path::PathBuf, rc::Rc, time::SystemTime};
 use structopt::StructOpt;
-use wasmtime::{Caller, Engine, Extern, Linker, Module, Store, Trap};
+use wasmtime::{Caller, Engine, Extern, Func, Linker, Module, Store, Trap};
 use wasmtime_wasi::{Wasi, WasiCtxBuilder};
 
 mod memory;
@@ -94,9 +94,9 @@ impl Handler {
     fn body_downstream_get(
         &self,
         store: &Store,
-    ) -> wasmtime::Func {
+    ) -> Func {
         let clone = self.clone();
-        wasmtime::Func::wrap(
+        Func::wrap(
             &store,
             move |caller: Caller<'_>,
                   request_handle_out: RequestHandle,
