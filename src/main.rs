@@ -91,6 +91,36 @@ impl Handler {
         Ok(self.into_response())
     }
 
+    fn body_downstream_get(
+        &self,
+        store: &Store,
+    ) -> wasmtime::Func {
+        let clone = self.clone();
+        wasmtime::Func::wrap(
+            &store,
+            move |caller: Caller<'_>,
+                  request_handle_out: RequestHandle,
+                  body_handle_out: BodyHandle| {
+                debug!(
+                    "fastly_http_req::body_downstream_get request_handle_out={} body_handle_out={}",
+                    request_handle_out, body_handle_out
+                );
+                clone
+                    .inner
+                    .borrow_mut()
+                    .requests
+                    .push(Request::new(Body::default()));
+                clone.inner.borrow_mut().bodies.push(Body::default());
+                let index = clone.inner.borrow().requests.len() - 1;
+
+                let mut mem = memory!(caller);
+                mem.write_i32(request_handle_out as usize, index as i32);
+                mem.write_i32(body_handle_out as usize, index as i32);
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+
     /// Builds a new linker given a provided `Store`
     /// configured with WASI and Fastly sys func implementations
     fn linker(
@@ -174,33 +204,11 @@ impl Handler {
                 self.none("fastly_http_req::header_remove"),
             )?;
 
-        let body_downstream_get = self.clone();
         linker
-            .func(
+            .define(
                 "fastly_http_req",
                 "body_downstream_get",
-                move |caller: Caller<'_>, request_handle_out: RequestHandle, body_handle_out: BodyHandle| {
-                    debug!(
-                        "fastly_http_req::body_downstream_get request_handle_out={} body_handle_out={}",
-                        request_handle_out, body_handle_out
-                    );
-                    body_downstream_get
-                        .inner
-                        .borrow_mut()
-                        .requests
-                        .push(Request::new(Body::default()));
-                        body_downstream_get
-                        .inner
-                        .borrow_mut()
-                        .bodies
-                        .push(Body::default());
-                    let index = body_downstream_get.inner.borrow().requests.len() - 1;
-
-                    let mut mem = memory!(caller);
-                    mem.write_i32(request_handle_out as usize, index as i32);
-                    mem.write_i32(body_handle_out as usize, index as i32);
-                    Ok(FastlyStatus::OK.code)
-                }
+                self.body_downstream_get(&store),
             )?
             .func(
                 "fastly_http_req",
