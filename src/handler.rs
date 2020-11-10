@@ -169,10 +169,10 @@ impl Handler {
                         let written = match mem
                             .write(addr as usize, req.method().as_ref().as_bytes())
                         {
-                            Err(_) => {
+                            Ok(num) => num,
+                            _ => {
                                 return Err(Trap::new("Failed to write request HTTP method bytes"))
                             }
-                            Ok(num) => num,
                         };
                         mem.write_u32(nwritten_out as usize, written as u32);
                     }
@@ -233,8 +233,8 @@ impl Handler {
                         let uri = request.uri().to_string();
                         debug!("fastly_http_req::uri_get => {}", uri);
                         let written = match mem.write(addr as usize, uri.as_bytes()) {
-                            Err(_) => return Err(Trap::new("failed to write method bytes")),
                             Ok(num) => num,
+                            _ => return Err(Trap::new("failed to write method bytes")),
                         };
                         mem.write_u32(nwritten_out as usize, written as u32);
                     }
@@ -263,7 +263,7 @@ impl Handler {
                 let mut memory = memory!(caller);
                 let (_, buf) = match memory.read(backend_addr as usize, backend_len as usize) {
                     Ok(result) => result,
-                    Err(_) => return Err(Trap::new("error reading backend name")),
+                    _ => return Err(Trap::new("error reading backend name")),
                 };
                 let backend = std::str::from_utf8(&buf).unwrap();
                 debug!("backend={}", backend);
@@ -286,7 +286,7 @@ impl Handler {
                     Some(req) => {
                         let (_, buf) = match memory!(caller).read(addr as usize, size as usize) {
                             Ok(result) => result,
-                            Err(_) => return Err(Trap::new("failed to read request uri")),
+                            _ => return Err(Trap::new("failed to read request uri")),
                         };
                         *req.uri_mut() = hyper::Uri::from_maybe_shared(buf)
                             .map_err(|_| Trap::new("invalid uri"))?;
@@ -458,8 +458,8 @@ impl Handler {
                     Some(body) => {
                         let mut mem = memory!(caller);
                         let (read, buf) = match mem.read(addr as usize, size as usize) {
-                            Err(_) => return Err(Trap::new("Failed to read body memory")),
                             Ok((num, buf)) => (num, buf),
+                            _ => return Err(Trap::new("Failed to read body memory")),
                         };
                         *body = Body::from(buf);
 
@@ -547,7 +547,7 @@ impl Handler {
                             Ok((_, bytes)) => {
                                 hyper::header::HeaderName::from_bytes(&bytes).unwrap()
                             }
-                            Err(_) => return Err(Trap::new("Failed to read header name")),
+                            _ => return Err(Trap::new("Failed to read header name")),
                         };
 
                         let mut values: Vec<_> = resp
@@ -606,14 +606,14 @@ impl Handler {
                             Ok((_, bytes)) => {
                                 hyper::header::HeaderName::from_bytes(&bytes).unwrap()
                             }
-                            Err(_) => return Err(Trap::new("Failed to read header name")),
+                            _ => return Err(Trap::new("Failed to read header name")),
                         };
 
                         let value = match memory.read(values_addr as usize, values_size as usize) {
                             Ok((_, bytes)) => {
                                 hyper::header::HeaderValue::from_bytes(&bytes).unwrap()
                             }
-                            Err(_) => return Err(Trap::new("Failed to read header name")),
+                            _ => return Err(Trap::new("Failed to read header name")),
                         };
                         resp.headers_mut().append(name, value);
                     }
