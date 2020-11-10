@@ -526,19 +526,61 @@ impl Handler {
         &self,
         store: &Store,
     ) -> Func {
+        let clone = self.clone();
         Func::wrap(
             store,
-            move |_caller: Caller<'_>,
-                  _handle: i32,
-                  _name_addr: i32,
-                  _name_size: i32,
-                  _addr: i32,
+            move |caller: Caller<'_>,
+                  handle: ResponseHandle,
+                  name_addr: i32,
+                  name_size: i32,
+                  addr: i32,
                   _maxlen: i32,
-                  _cursor: i32,
-                  _ending_cursor_out: i32,
-                  _nwritten_out: i32| {
+                  cursor: i32,
+                  ending_cursor_out: i32,
+                  nwritten_out: i32| {
                 debug!("fastly_http_resp::header_values_get");
-                FastlyStatus::OK.code
+
+                let mut memory = memory!(caller);
+                match clone.inner.borrow_mut().responses.get_mut(handle as usize) {
+                    Some(resp) => {
+                        let name = match memory.read(name_addr as usize, name_size as usize) {
+                            Ok((_, bytes)) => {
+                                hyper::header::HeaderName::from_bytes(&bytes).unwrap()
+                            }
+                            Err(_) => return Err(Trap::new("Failed to read header name")),
+                        };
+
+                        let mut values: Vec<_> = resp
+                            .headers()
+                            .get_all(name)
+                            .into_iter()
+                            .map(|e| e.as_ref())
+                            .collect();
+                        values.sort();
+
+                        let ucursor = cursor as usize;
+                        if ucursor >= values.len() {
+                            memory.write_i32(nwritten_out as usize, 0);
+                            memory.write_i32(ending_cursor_out as usize, -1);
+                            return Ok(FastlyStatus::OK.code);
+                        }
+                        let mut bytes = values.get(ucursor).unwrap().to_vec();
+                        bytes.push(0); // api requires a terminating \x00 byte
+                        let written = memory.write(addr as usize, &bytes).unwrap();
+                        memory.write_i32(nwritten_out as usize, written as i32);
+                        memory.write_i32(
+                            ending_cursor_out as usize,
+                            if ucursor < values.len() - 1 {
+                                cursor + 1 as i32
+                            } else {
+                                -1 as i32
+                            },
+                        );
+                    }
+                    _ => return Err(Trap::new("Invalid response handler")),
+                }
+
+                Ok(FastlyStatus::OK.code)
             },
         )
     }
