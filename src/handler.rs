@@ -20,7 +20,7 @@ type BodyHandle = i32;
 #[derive(Default, Debug)]
 struct Inner {
     /// downstream request
-    request: Request<Body>,
+    request: Option<Request<Body>>,
     /// requests initiated within the handler
     requests: Vec<Request<Body>>,
     /// responses from the requests initiated within the handler
@@ -56,7 +56,7 @@ impl Handler {
     pub fn new(request: hyper::Request<Body>) -> Self {
         Handler {
             inner: Rc::new(RefCell::new(Inner {
-                request,
+                request: Some(request),
                 ..Inner::default()
             })),
         }
@@ -91,12 +91,19 @@ impl Handler {
                     request_handle_out, body_handle_out
                 );
                 let index = clone.inner.borrow().requests.len();
+                let (parts, body) = clone
+                    .inner
+                    .borrow_mut()
+                    .request
+                    .take()
+                    .unwrap()
+                    .into_parts();
                 clone
                     .inner
                     .borrow_mut()
                     .requests
-                    .push(Request::new(Body::default()));
-                clone.inner.borrow_mut().bodies.push(Body::default());
+                    .push(Request::from_parts(parts, Body::default()));
+                clone.inner.borrow_mut().bodies.push(body);
 
                 let mut mem = memory!(caller);
                 mem.write_i32(request_handle_out as usize, index as i32);
@@ -221,14 +228,19 @@ impl Handler {
                     handle, addr, maxlen, nwritten_out
                 );
                 let mut mem = memory!(caller);
-                let uri = clone.inner.borrow_mut().request.uri().to_string();
-                debug!("fastly_http_req::uri_get => {}", uri);
-                let written = match mem.write(addr as usize, uri.as_bytes()) {
-                    Err(_) => return Err(Trap::new("failed to write method bytes")),
-                    Ok(num) => num,
-                };
+                match clone.inner.borrow().requests.get(handle as usize) {
+                    Some(request) => {
+                        let uri = request.uri().to_string();
+                        debug!("fastly_http_req::uri_get => {}", uri);
+                        let written = match mem.write(addr as usize, uri.as_bytes()) {
+                            Err(_) => return Err(Trap::new("failed to write method bytes")),
+                            Ok(num) => num,
+                        };
+                        mem.write_u32(nwritten_out as usize, written as u32);
+                    }
+                    _ => return Err(Trap::new("invalid request handle")),
+                }
 
-                mem.write_u32(nwritten_out as usize, written as u32);
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -293,7 +305,7 @@ impl Handler {
     ) -> Func {
         Func::wrap(
             store,
-            move |caller: Caller<'_>, tag: i32, ttl: i32, swr: i32| {
+            move |_caller: Caller<'_>, _tag: i32, _ttl: i32, _swr: i32| {
                 debug!("fastly_http_req::cache_override_set");
 
                 FastlyStatus::OK.code
@@ -311,15 +323,14 @@ impl Handler {
             move |caller: Caller<'_>,
                   handle: RequestHandle,
                   addr: i32,
-                  maxlen: i32,
+                  _maxlen: i32,
                   cursor: i32,
                   ending_cursor_out: i32,
                   nwritten_out: i32| {
                 debug!("fastly_http_req::header_names_get");
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => {
-                        let mut names =
-                            req.headers().keys().map(|h| h.as_str()).collect::<Vec<_>>();
+                        let mut names: Vec<_> = req.headers().keys().map(|h| h.as_str()).collect();
                         names.sort();
                         let mut memory = memory!(caller);
                         let ucursor = cursor as usize;
@@ -328,12 +339,76 @@ impl Handler {
                             memory.write_i32(ending_cursor_out as usize, -1);
                             return Ok(FastlyStatus::OK.code);
                         }
-                        let bytes = names.get(ucursor).unwrap().as_bytes();
-                        let written = memory.write(addr as usize, bytes).unwrap();
+                        let mut bytes = names.get(ucursor).unwrap().as_bytes().to_vec();
+                        bytes.push(0); // api requires a terminating \x00 byte
+                        let written = memory.write(addr as usize, &bytes).unwrap();
                         memory.write_i32(nwritten_out as usize, written as i32);
                         memory.write_i32(
                             ending_cursor_out as usize,
                             if ucursor < names.len() - 1 {
+                                cursor + 1 as i32
+                            } else {
+                                -1 as i32
+                            },
+                        );
+                    }
+                    _ => return Err(Trap::new("invalid request handle")),
+                }
+
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+
+    fn fastly_http_req_header_values_get(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(
+            store,
+            move |caller: Caller<'_>,
+                  handle: RequestHandle,
+                  name_addr: i32,
+                  name_size: i32,
+                  addr: i32,
+                  maxlen: i32,
+                  cursor: i32,
+                  ending_cursor_out: i32,
+                  nwritten_out: i32| {
+                debug!("fastly_http_req::header_values_get");
+
+                debug!("fastly_http_req::header_names_get");
+                match clone.inner.borrow().requests.get(handle as usize) {
+                    Some(req) => {
+                        let mut memory = memory!(caller);
+                        let (_, header) = match memory.read(name_addr as usize, name_size as usize)
+                        {
+                            Ok(result) => result,
+                            _ => return Err(Trap::new("Failed to read header name")),
+                        };
+                        let name = std::str::from_utf8(&header).unwrap();
+                        let mut values: Vec<_> = req
+                            .headers()
+                            .get_all(name)
+                            .into_iter()
+                            .map(|h| h.as_ref())
+                            .collect();
+                        values.sort();
+                        let mut memory = memory!(caller);
+                        let ucursor = cursor as usize;
+                        if ucursor >= values.len() {
+                            memory.write_i32(nwritten_out as usize, 0);
+                            memory.write_i32(ending_cursor_out as usize, -1);
+                            return Ok(FastlyStatus::OK.code);
+                        }
+                        let mut bytes = values.get(ucursor).unwrap().to_vec();
+                        bytes.push(0); // api requires a terminating \x00 byte
+                        let written = memory.write(addr as usize, &bytes).unwrap();
+                        memory.write_i32(nwritten_out as usize, written as i32);
+                        memory.write_i32(
+                            ending_cursor_out as usize,
+                            if ucursor < values.len() - 1 {
                                 cursor + 1 as i32
                             } else {
                                 -1 as i32
@@ -625,35 +700,14 @@ impl Handler {
             "fastly_http_req",
             "uri_set",
             self.fastly_http_req_uri_set(&store)
-        )?.func(
+        )?.define(
             "fastly_http_req",
             "header_names_get",
-            |_: Caller<'_>,
-             _handle: RequestHandle,
-             _addr: i32,
-             _maxlen: i32,
-             _cursor: i32,
-             _ending_cursor_out: i32,
-             _nwritten_out: i32| {
-                debug!("fastly_http_req::header_names_get");
-                // noop
-                FastlyStatus::OK.code
-            },
-        )?.func(
+            self.fastly_http_req_header_names_get(&store),
+        )?.define(
             "fastly_http_req",
             "header_values_get",
-            |_handle: RequestHandle,
-             _name_addr: i32,
-             _name_size: i32,
-             _addr: i32,
-             _maxlen: i32,
-             _cursor: i32,
-             _ending_cursor_out: i32,
-             _nwritten_out: i32| {
-                debug!("fastly_http_req::header_values_get");
-                // noop
-                FastlyStatus::OK.code
-            },
+            self.fastly_http_req_header_values_get(&store)
         )?.func(
             "fastly_http_req",
             "header_values_set",
