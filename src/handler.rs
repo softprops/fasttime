@@ -250,7 +250,6 @@ impl Handler {
         &self,
         store: &Store,
     ) -> Func {
-        let clone = self.clone();
         Func::wrap(
             store,
             move |caller: Caller<'_>,
@@ -372,13 +371,11 @@ impl Handler {
                   name_addr: i32,
                   name_size: i32,
                   addr: i32,
-                  maxlen: i32,
+                  _maxlen: i32,
                   cursor: i32,
                   ending_cursor_out: i32,
                   nwritten_out: i32| {
                 debug!("fastly_http_req::header_values_get");
-
-                debug!("fastly_http_req::header_names_get");
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => {
                         let mut memory = memory!(caller);
@@ -418,7 +415,6 @@ impl Handler {
                     _ => return Err(Trap::new("invalid request handle")),
                 }
 
-                // noop
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -551,15 +547,38 @@ impl Handler {
         &self,
         store: &Store,
     ) -> Func {
+        let clone = self.clone();
         Func::wrap(
             store,
-            move |_handle: i32,
-                  _name_addr: i32,
-                  _name_size: i32,
-                  _values_addr: i32,
-                  _values_size: i32| {
+            move |caller: Caller<'_>,
+                  handle: ResponseHandle,
+                  name_addr: i32,
+                  name_size: i32,
+                  values_addr: i32,
+                  values_size: i32| {
                 debug!("fastly_http_resp::header_values_set");
-                FastlyStatus::OK.code
+                let mut memory = memory!(caller);
+                match clone.inner.borrow_mut().responses.get_mut(handle as usize) {
+                    Some(resp) => {
+                        let name = match memory.read(name_addr as usize, name_size as usize) {
+                            Ok((_, bytes)) => {
+                                hyper::header::HeaderName::from_bytes(&bytes).unwrap()
+                            }
+                            Err(_) => return Err(Trap::new("Failed to read header name")),
+                        };
+
+                        let value = match memory.read(values_addr as usize, values_size as usize) {
+                            Ok((_, bytes)) => {
+                                hyper::header::HeaderValue::from_bytes(&bytes).unwrap()
+                            }
+                            Err(_) => return Err(Trap::new("Failed to read header name")),
+                        };
+                        resp.headers_mut().append(name, value);
+                    }
+                    _ => return Err(Trap::new("Invalid response handler")),
+                }
+
+                Ok(FastlyStatus::OK.code)
             },
         )
     }
