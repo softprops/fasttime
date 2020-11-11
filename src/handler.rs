@@ -104,6 +104,7 @@ impl Handler {
                     .take()
                     .unwrap()
                     .into_parts();
+                debug!("fastly_http_req::body_downstream_get {:?}", parts);
                 clone
                     .inner
                     .borrow_mut()
@@ -117,6 +118,20 @@ impl Handler {
                 Ok(FastlyStatus::OK.code)
             },
         )
+    }
+
+    fn fastly_http_req_new(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(store, move |caller: Caller<'_>, request: RequestHandle| {
+            debug!("fastly_http_req::new request={}", request);
+            let index = clone.inner.borrow().requests.len();
+            clone.inner.borrow_mut().requests.push(Request::default());
+            memory!(caller).write_i32(request as usize, index as i32);
+            Ok(FastlyStatus::OK.code)
+        })
     }
 
     fn fastly_http_resp_send_downstream(
@@ -282,7 +297,7 @@ impl Handler {
                     .requests
                     .remove(req_handle as usize)
                     .into_parts();
-                let body = clone.inner.borrow_mut().bodies.remove(req_handle as usize);
+                let body = clone.inner.borrow_mut().bodies.remove(body_handle as usize);
                 let req = Request::from_parts(parts, body);
                 let (parts, body) = backends.send(backend, req).unwrap().into_parts();
 
@@ -315,7 +330,10 @@ impl Handler {
         Func::wrap(
             store,
             move |caller: Caller<'_>, rhandle: RequestHandle, addr: i32, size: i32| {
-                debug!("fastly_http_req::uri_set");
+                debug!(
+                    "fastly_http_req::uri_set rhandle={} addr={} size={}",
+                    rhandle, addr, size
+                );
                 match clone.inner.borrow_mut().requests.get_mut(rhandle as usize) {
                     Some(req) => {
                         let (_, buf) = match memory!(caller).read(addr as usize, size as usize) {
@@ -353,13 +371,21 @@ impl Handler {
         Func::wrap(
             store,
             move |_caller: Caller<'_>,
-                  _handle_out: RequestHandle,
-                  _tag: u32,
-                  _ttl: u32,
-                  _swr: u32,
-                  _sk: i32, // see fastly-sys types
-                  _sk_len: i32| {
-                debug!("fastly_http_req::cache_override_v2_set");
+                  handle_out: RequestHandle,
+                  tag: u32,
+                  ttl: u32,
+                  swr: u32,
+                  sk: i32, // see fastly-sys types
+                  sk_len: i32| {
+                debug!(
+                    "fastly_http_req::cache_override_v2_set handle_out={} tag={} ttl={} swr={} sk={} sk_len={}",
+                    handle_out,
+                    tag,
+                    ttl,
+                    swr,
+                    sk,
+                    sk_len
+                );
                 // noop
                 FastlyStatus::OK.code
             },
@@ -684,6 +710,26 @@ impl Handler {
             },
         )
     }
+
+    fn fastly_http_resp_status_get(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(
+            store,
+            move |caller: Caller<'_>, resp_handle: ResponseHandle, status: i32| {
+                match clone.inner.borrow().responses.get(resp_handle as usize) {
+                    Some(resp) => {
+                        memory!(caller).write_i32(status as usize, resp.status().as_u16() as i32)
+                    }
+                    _ => return Err(Trap::new("Invalid response handle")),
+                }
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+
     /// Builds a new linker given a provided `Store`
     /// configured with WASI and Fastly sys func implementations
     fn linker(
@@ -777,7 +823,7 @@ impl Handler {
                 "downstream_client_ip_addr",
                 self.none("fastly_http_req::downstream_client_ip_addr"),
             )?
-            .func("fastly_http_req", "new", self.one("fastly_http_req::new"))?
+            .define("fastly_http_req", "new", self.fastly_http_req_new(&store))?
             .func(
                 "fastly_http_req",
                 "version_get",
@@ -884,10 +930,10 @@ impl Handler {
                 "send_downstream",
                 self.fastly_http_resp_send_downstream(&store),
             )?
-            .func(
+            .define(
                 "fastly_http_resp",
                 "status_get",
-                self.two("fastly_http_resp::status_get"),
+                self.fastly_http_resp_status_get(&store),
             )?
             .define(
                 "fastly_http_resp",

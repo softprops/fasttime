@@ -44,9 +44,20 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     let server = Server::bind(&addr).serve(make_service_fn(move |_| {
         let state = state.clone();
         async move {
-            Ok::<_, anyhow::Error>(service_fn(move |req| {
+            Ok::<_, anyhow::Error>(service_fn(move |mut req| {
                 let (module, engine) = state.clone();
                 async move {
+                    // re-writing uri to a host and authority. fastly requests validate these are present before sending them upstream
+                    *req.uri_mut() = format!(
+                        "http://{}{}",
+                        req.headers()
+                            .get("host")
+                            .and_then(|h| h.to_str().ok())
+                            .unwrap(),
+                        req.uri()
+                    )
+                    .parse()
+                    .unwrap();
                     Ok::<_, anyhow::Error>(
                         Handler::new(req)
                             .run(&module, Store::new(&engine), backend::default())
@@ -89,7 +100,11 @@ mod tests {
         let engine = Engine::default();
         let module = Module::from_file(&engine, "./tests/app/bin/main.wasm")?;
 
-        let response = Handler::new(Request::default()).run(&module, Store::new(&engine))?;
+        let response = Handler::new(Request::default()).run(
+            &module,
+            Store::new(&engine),
+            backend::default(),
+        )?;
         println!("{:?}", response.status());
         let bytes = hyper::body::to_bytes(response.into_body()).await?;
         assert_eq!(
