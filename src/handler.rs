@@ -510,6 +510,7 @@ impl Handler {
         &self,
         store: &Store,
     ) -> Func {
+        let clone = self.clone();
         Func::wrap(
             store,
             move |caller: Caller<'_>, handle: RequestHandle, version_out: i32| {
@@ -517,9 +518,16 @@ impl Handler {
                     "fastly_http_req::version_get handle={} version_out={}",
                     handle, version_out
                 );
-                // http 1/1
-                let version = 2;
-                memory!(caller).write_i32(version_out as usize, version);
+                match clone.inner.borrow().requests.get(handle as usize) {
+                    Some(req) => {
+                        // http 1/1
+                        let version = 2;
+                        // todo map this to a number
+                        let _ = req.version();
+                        memory!(caller).write_i32(version_out as usize, version as i32)
+                    }
+                    _ => return Err(Trap::new("Invalid response handle")),
+                }
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -766,10 +774,11 @@ impl Handler {
                     resp_handle, version_out
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
-                    Some(_) => {
+                    Some(resp) => {
                         // http 1/1
                         let version = 2;
-
+                        // todo map this to a number
+                        let _ = resp.version();
                         memory!(caller).write_i32(version_out as usize, version as i32)
                     }
                     _ => return Err(Trap::new("Invalid response handle")),
@@ -786,7 +795,7 @@ impl Handler {
     ) -> Func {
         Func::wrap(
             store,
-            move |caller: Caller<'_>, whandle: ResponseHandle, version: i32| {
+            move |_: Caller<'_>, whandle: ResponseHandle, version: i32| {
                 debug!(
                     "fastly_http_resp::version_set handle={} version={}",
                     whandle, version
@@ -1084,16 +1093,6 @@ impl Handler {
         name: &'static str,
     ) -> impl Fn(i32) -> i32 {
         move |_: i32| {
-            debug!("{} (stub)", name);
-            FastlyStatus::UNSUPPORTED.code
-        }
-    }
-
-    fn two(
-        &self,
-        name: &'static str,
-    ) -> impl Fn(i32, i32) -> i32 {
-        move |_: i32, _: i32| {
             debug!("{} (stub)", name);
             FastlyStatus::UNSUPPORTED.code
         }
