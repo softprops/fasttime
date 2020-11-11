@@ -763,7 +763,7 @@ impl Handler {
             move |caller: Caller<'_>, resp_handle: ResponseHandle, version_out: i32| {
                 debug!(
                     "fastly_http_resp::version_get resp_handle={} version={}",
-                    resp_handle, version
+                    resp_handle, version_out
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
                     Some(_) => {
