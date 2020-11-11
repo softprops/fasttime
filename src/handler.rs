@@ -506,6 +506,25 @@ impl Handler {
         )
     }
 
+    fn fastly_http_req_version_get(
+        &self,
+        store: &Store,
+    ) -> Func {
+        Func::wrap(
+            store,
+            move |caller: Caller<'_>, handle: RequestHandle, version_out: i32| {
+                debug!(
+                    "fastly_http_req::version_get handle={} version_out={}",
+                    handle, version_out
+                );
+                // http 1/1
+                let version = 2;
+                memory!(caller).write_i32(version_out as usize, version);
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+
     // bodies
 
     fn fastly_http_body_new(
@@ -719,12 +738,59 @@ impl Handler {
         Func::wrap(
             store,
             move |caller: Caller<'_>, resp_handle: ResponseHandle, status: i32| {
+                debug!(
+                    "fastly_http_resp::status_get resp_handle={} status={}",
+                    resp_handle, status
+                );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
                     Some(resp) => {
                         memory!(caller).write_i32(status as usize, resp.status().as_u16() as i32)
                     }
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+
+    fn fastly_http_resp_version_get(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(
+            store,
+            move |caller: Caller<'_>, resp_handle: ResponseHandle, version_out: i32| {
+                debug!(
+                    "fastly_http_resp::version_get resp_handle={} version={}",
+                    resp_handle, version
+                );
+                match clone.inner.borrow().responses.get(resp_handle as usize) {
+                    Some(_) => {
+                        // http 1/1
+                        let version = 2;
+
+                        memory!(caller).write_i32(version_out as usize, version as i32)
+                    }
+                    _ => return Err(Trap::new("Invalid response handle")),
+                }
+
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+
+    fn fastly_http_resp_version_set(
+        &self,
+        store: &Store,
+    ) -> Func {
+        Func::wrap(
+            store,
+            move |caller: Caller<'_>, whandle: ResponseHandle, version: i32| {
+                debug!(
+                    "fastly_http_resp::version_set handle={} version={}",
+                    whandle, version
+                );
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -824,19 +890,10 @@ impl Handler {
                 self.none("fastly_http_req::downstream_client_ip_addr"),
             )?
             .define("fastly_http_req", "new", self.fastly_http_req_new(&store))?
-            .func(
+            .define(
                 "fastly_http_req",
                 "version_get",
-                move |caller: Caller<'_>, handle: RequestHandle, version_out: i32| {
-                    debug!(
-                        "fastly_http_req::version_get handle={} version_out={}",
-                        handle, version_out
-                    );
-                    // http 1/1
-                    let version = 2;
-                    memory!(caller).write_i32(version_out as usize, version);
-                    Ok(FastlyStatus::OK.code)
-                },
+                self.fastly_http_req_version_get(&store)
             )?
             .func(
                 "fastly_http_req",
@@ -940,23 +997,15 @@ impl Handler {
                 "status_set",
                 self.fastly_http_resp_status_set(&store),
             )?
-            .func(
+            .define(
                 "fastly_http_resp",
                 "version_get",
-                self.two("fastly_http_resp::version_get"),
+                self.fastly_http_resp_version_get(&store),
             )?
-            .func(
+            .define(
                 "fastly_http_resp",
                 "version_set",
-                move |_: Caller<'_>, whandle: ResponseHandle, version: i32| {
-                    debug!(
-                        "fastly_http_resp::version_set whandle={} version={}",
-                        whandle, version
-                    );
-                    // todo map version to http::Version enum
-
-                    Ok(FastlyStatus::OK.code)
-                },
+                self.fastly_http_resp_version_set(&store),
             )?
             .func(
                 "fastly_http_resp",
