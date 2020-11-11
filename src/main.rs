@@ -11,6 +11,7 @@ mod memory;
 use handler::Handler;
 mod backend;
 use backend::Backend;
+mod http;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 

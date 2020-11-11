@@ -519,13 +519,10 @@ impl Handler {
                     handle, version_out
                 );
                 match clone.inner.borrow().requests.get(handle as usize) {
-                    Some(req) => {
-                        // http 1/1
-                        let version = 2;
-                        // todo map this to a number
-                        let _ = req.version();
-                        memory!(caller).write_i32(version_out as usize, version as i32)
-                    }
+                    Some(req) => memory!(caller).write_u32(
+                        version_out as usize,
+                        crate::http::version(req.version()).as_u32(),
+                    ),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
                 Ok(FastlyStatus::OK.code)
@@ -774,13 +771,10 @@ impl Handler {
                     resp_handle, version_out
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
-                    Some(resp) => {
-                        // http 1/1
-                        let version = 2;
-                        // todo map this to a number
-                        let _ = resp.version();
-                        memory!(caller).write_i32(version_out as usize, version as i32)
-                    }
+                    Some(resp) => memory!(caller).write_u32(
+                        version_out as usize,
+                        crate::http::version(resp.version()).as_u32(),
+                    ),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
 
