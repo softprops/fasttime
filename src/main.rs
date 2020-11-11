@@ -9,8 +9,10 @@ use wasmtime::{Engine, Module, Store};
 mod handler;
 mod memory;
 use handler::Handler;
+mod backend;
+use backend::Backend;
 
-type BoxError = Box<dyn Error + Send + Sync + 'static>;
+pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
 /// ⏱️  A local Fastly Compute@Edge server emulator
 #[derive(Debug, StructOpt)]
@@ -23,10 +25,8 @@ struct Opts {
     port: u16,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), BoxError> {
-    pretty_env_logger::init();
-    let Opts { wasm, port } = Opts::from_args();
+async fn run(opts: Opts) -> Result<(), BoxError> {
+    let Opts { wasm, port } = opts;
     let engine = Engine::default();
 
     // Loading a module significant amount of time depending on the size
@@ -49,7 +49,7 @@ async fn main() -> Result<(), BoxError> {
                 async move {
                     Ok::<_, anyhow::Error>(
                         Handler::new(req)
-                            .run(&module, Store::new(&engine))
+                            .run(&module, Store::new(&engine), backend::default())
                             .map_err(|e| {
                                 log::debug!("handler::run error: {}", e);
                                 anyhow!(e.to_string())
@@ -67,13 +67,24 @@ async fn main() -> Result<(), BoxError> {
     Ok(())
 }
 
+#[tokio::main]
+async fn main() -> Result<(), BoxError> {
+    pretty_env_logger::init();
+    run(Opts::from_args()).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use hyper::Request;
+    use std::path::Path;
 
     #[tokio::test]
     async fn it_works() -> Result<(), BoxError> {
+        if !Path::new("./tests/app/bin/main.wasm").exists() {
+            return Ok(());
+        }
         // todo create one eng/module for all tests
         let engine = Engine::default();
         let module = Module::from_file(&engine, "./tests/app/bin/main.wasm")?;

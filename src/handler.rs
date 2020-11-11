@@ -1,13 +1,14 @@
+use crate::{
+    memory::{ReadMem, WriteMem},
+    BoxError,
+};
 use fastly_shared::FastlyStatus;
 use hyper::{Body, Request, Response};
 use log::debug;
-use std::{cell::RefCell, error::Error, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 use wasmtime::{Caller, Extern, Func, Linker, Module, Store, Trap};
 use wasmtime_wasi::{Wasi, WasiCtxBuilder};
 
-use crate::memory::{ReadMem, WriteMem};
-
-type BoxError = Box<dyn Error + Send + Sync + 'static>;
 type RequestHandle = i32;
 type ResponseHandle = i32;
 type BodyHandle = i32;
@@ -67,8 +68,13 @@ impl Handler {
         mut self,
         module: &Module,
         store: Store,
+        backends: impl crate::Backend + 'static,
     ) -> Result<Response<Body>, BoxError> {
-        if let Some(func) = self.linker(store)?.instantiate(&module)?.get_func("_start") {
+        if let Some(func) = self
+            .linker(store, backends)?
+            .instantiate(&module)?
+            .get_func("_start")
+        {
             func.call(&[])?;
         } else {
             return Err(Trap::new("wasm module does not define a `_start` func").into());
@@ -249,7 +255,9 @@ impl Handler {
     fn fastly_http_req_send(
         &self,
         store: &Store,
+        backends: impl crate::Backend + 'static,
     ) -> Func {
+        let clone = self.clone();
         Func::wrap(
             store,
             move |caller: Caller<'_>,
@@ -267,7 +275,33 @@ impl Handler {
                 };
                 let backend = std::str::from_utf8(&buf).unwrap();
                 debug!("backend={}", backend);
-                // todo: send it
+
+                let (parts, _) = clone
+                    .inner
+                    .borrow_mut()
+                    .requests
+                    .remove(req_handle as usize)
+                    .into_parts();
+                let body = clone.inner.borrow_mut().bodies.remove(req_handle as usize);
+                let req = Request::from_parts(parts, body);
+                let (parts, body) = backends.send(backend, req).unwrap().into_parts();
+
+                clone
+                    .inner
+                    .borrow_mut()
+                    .responses
+                    .push(Response::from_parts(parts, Body::default()));
+                clone.inner.borrow_mut().bodies.push(body);
+
+                memory.write_i32(
+                    resp_handle_out as usize,
+                    (clone.inner.borrow().responses.len() - 1) as i32,
+                );
+                memory.write_i32(
+                    resp_body_handle_out as usize,
+                    (clone.inner.borrow().bodies.len() - 1) as i32,
+                );
+
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -312,6 +346,26 @@ impl Handler {
         )
     }
 
+    fn fastly_http_req_cache_override_v2_set(
+        &self,
+        store: &Store,
+    ) -> Func {
+        Func::wrap(
+            store,
+            move |_caller: Caller<'_>,
+                  _handle_out: RequestHandle,
+                  _tag: u32,
+                  _ttl: u32,
+                  _swr: u32,
+                  _sk: i32, // see fastly-sys types
+                  _sk_len: i32| {
+                debug!("fastly_http_req::cache_override_v2_set");
+                // noop
+                FastlyStatus::OK.code
+            },
+        )
+    }
+
     fn fastly_http_req_header_names_get(
         &self,
         store: &Store,
@@ -338,6 +392,11 @@ impl Handler {
                             memory.write_i32(ending_cursor_out as usize, -1);
                             return Ok(FastlyStatus::OK.code);
                         }
+                        debug!(
+                            "fastly_http_req::header_names_get {:?} ({})",
+                            names.get(ucursor),
+                            ucursor
+                        );
                         let mut bytes = names.get(ucursor).unwrap().as_bytes().to_vec();
                         bytes.push(0); // api requires a terminating \x00 byte
                         let written = memory.write(addr as usize, &bytes).unwrap();
@@ -385,6 +444,7 @@ impl Handler {
                             _ => return Err(Trap::new("Failed to read header name")),
                         };
                         let name = std::str::from_utf8(&header).unwrap();
+                        debug!("fastly_http_req::header_values_get {} ({})", name, cursor);
                         let mut values: Vec<_> = req
                             .headers()
                             .get_all(name)
@@ -629,6 +689,7 @@ impl Handler {
     fn linker(
         &mut self,
         store: Store,
+        backends: impl crate::Backend + 'static,
     ) -> Result<Linker, BoxError> {
         let wasi = Wasi::new(
             &store,
@@ -779,25 +840,15 @@ impl Handler {
         )?.define(
             "fastly_http_req",
             "send",
-            self.fastly_http_req_send(&store)
+            self.fastly_http_req_send(&store, backends)
         )?.define(
             "fastly_http_req",
             "cache_override_set",
             self.fastly_http_req_cache_override_set(&store)
-        )?.func(
+        )?.define(
             "fastly_http_req",
             "cache_override_v2_set",
-            move |_caller: Caller<'_>,
-                  _handle_out: RequestHandle,
-                  _tag: u32,
-                  _ttl: u32,
-                  _swr: u32,
-                  _sk: i32, // see fastly-sys types
-                  _sk_len: i32| {
-                debug!("fastly_http_req::cache_override_v2_set");
-                // noop
-                FastlyStatus::OK.code
-            },
+            self.fastly_http_req_cache_override_v2_set(&store)
         )?.func(
             "fastly_http_req",
             "original_header_names_get",
