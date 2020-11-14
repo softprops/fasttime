@@ -131,11 +131,7 @@ impl Handler {
                     request_handle_out, body_handle_out
                 );
                 let index = clone.requests().len();
-                let (parts, body) = clone
-                    .request_mut()
-                    .take()
-                    .unwrap()
-                    .into_parts();
+                let (parts, body) = clone.request_mut().take().unwrap().into_parts();
                 debug!("fastly_http_req::body_downstream_get {:?}", parts);
                 clone
                     .requests_mut()
@@ -183,10 +179,7 @@ impl Handler {
                     debug!("resp_send_downstream: streaming unsupported");
                     return FastlyStatus::UNSUPPORTED.code;
                 }
-                let (parts, _) = clone
-                    .responses_mut()
-                    .remove(whandle as usize)
-                    .into_parts();
+                let (parts, _) = clone.responses_mut().remove(whandle as usize).into_parts();
                 let body = clone.bodies_mut().remove(bhandle as usize);
                 *clone.response_mut() = hyper::Response::from_parts(parts, body);
 
@@ -246,12 +239,10 @@ impl Handler {
                     _ => return Err(Trap::new("failed to read body memory")),
                 };
                 match hyper::Method::from_bytes(&buf) {
-                    Ok(method) => {
-                        match clone.requests_mut().get_mut(handle as usize) {
-                            Some(req) => *req.method_mut() = method,
-                            _ => return Err(Trap::new("invalid request handler")),
-                        }
-                    }
+                    Ok(method) => match clone.requests_mut().get_mut(handle as usize) {
+                        Some(req) => *req.method_mut() = method,
+                        _ => return Err(Trap::new("invalid request handler")),
+                    },
                     _ => return Err(Trap::new("invalid http method")),
                 };
 
