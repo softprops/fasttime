@@ -38,6 +38,40 @@ pub struct Handler {
 }
 
 impl Handler {
+    fn request_mut(&self) -> &mut Response<Body> {
+        &mut self.inner.borrow_mut().response
+    }
+
+    fn response_mut(&self) -> &mut Option<Request<Body>> {
+        &mut self.inner.borrow_mut().request
+    }
+
+    fn requests(&self) -> &Vec<Request<Body>> {
+        &self.inner.borrow().requests
+    }
+
+    fn requests_mut(&self) -> &mut Vec<Request<Body>> {
+        &mut self.inner.borrow_mut().requests
+    }
+
+    fn responses(&self) -> &Vec<Response<Body>> {
+        &mut self.inner.borrow().responses
+    }
+
+    fn responses_mut(&self) -> &mut Vec<Response<Body>> {
+        &mut self.inner.borrow_mut().responses
+    }
+
+    fn bodies(&self) -> &Vec<Body> {
+        &mut self.inner.borrow().bodies
+    }
+
+    fn bodies_mut(&self) -> &mut Vec<Body> {
+        &mut self.inner.borrow_mut().bodies
+    }
+}
+
+impl Handler {
     fn into_response(self) -> Response<Body> {
         self.inner.replace(Default::default()).response
     }
@@ -96,21 +130,17 @@ impl Handler {
                     "fastly_http_req::body_downstream_get request_handle_out={} body_handle_out={}",
                     request_handle_out, body_handle_out
                 );
-                let index = clone.inner.borrow().requests.len();
+                let index = clone.requests().len();
                 let (parts, body) = clone
-                    .inner
-                    .borrow_mut()
-                    .request
+                    .request_mut()
                     .take()
                     .unwrap()
                     .into_parts();
                 debug!("fastly_http_req::body_downstream_get {:?}", parts);
                 clone
-                    .inner
-                    .borrow_mut()
-                    .requests
+                    .requests_mut()
                     .push(Request::from_parts(parts, Body::default()));
-                clone.inner.borrow_mut().bodies.push(body);
+                clone.bodies_mut().push(body);
 
                 let mut mem = memory!(caller);
                 mem.write_i32(request_handle_out as usize, index as i32);
@@ -127,8 +157,8 @@ impl Handler {
         let clone = self.clone();
         Func::wrap(store, move |caller: Caller<'_>, request: RequestHandle| {
             debug!("fastly_http_req::new request={}", request);
-            let index = clone.inner.borrow().requests.len();
-            clone.inner.borrow_mut().requests.push(Request::default());
+            let index = clone.requests().len();
+            clone.requests_mut().push(Request::default());
             memory!(caller).write_i32(request as usize, index as i32);
             Ok(FastlyStatus::OK.code)
         })
@@ -154,13 +184,11 @@ impl Handler {
                     return FastlyStatus::UNSUPPORTED.code;
                 }
                 let (parts, _) = clone
-                    .inner
-                    .borrow_mut()
-                    .responses
+                    .responses_mut()
                     .remove(whandle as usize)
                     .into_parts();
-                let body = clone.inner.borrow_mut().bodies.remove(bhandle as usize);
-                clone.inner.borrow_mut().response = hyper::Response::from_parts(parts, body);
+                let body = clone.bodies_mut().remove(bhandle as usize);
+                *clone.response_mut() = hyper::Response::from_parts(parts, body);
 
                 FastlyStatus::OK.code
             },
@@ -184,7 +212,7 @@ impl Handler {
                     handle, addr, maxlen, nwritten_out
                 );
                 let mut mem = memory!(caller);
-                match clone.inner.borrow().requests.get(handle as usize) {
+                match clone.requests().get(handle as usize) {
                     Some(req) => {
                         debug!("fastly_http_req::method_get => {}", req.method());
                         let written = match mem
@@ -219,7 +247,7 @@ impl Handler {
                 };
                 match hyper::Method::from_bytes(&buf) {
                     Ok(method) => {
-                        match clone.inner.borrow_mut().requests.get_mut(handle as usize) {
+                        match clone.requests_mut().get_mut(handle as usize) {
                             Some(req) => *req.method_mut() = method,
                             _ => return Err(Trap::new("invalid request handler")),
                         }
@@ -249,7 +277,7 @@ impl Handler {
                     handle, addr, maxlen, nwritten_out
                 );
                 let mut mem = memory!(caller);
-                match clone.inner.borrow().requests.get(handle as usize) {
+                match clone.requests().get(handle as usize) {
                     Some(request) => {
                         let uri = request.uri().to_string();
                         debug!("fastly_http_req::uri_get => {}", uri);
@@ -292,29 +320,25 @@ impl Handler {
                 debug!("backend={}", backend);
 
                 let (parts, _) = clone
-                    .inner
-                    .borrow_mut()
-                    .requests
+                    .requests_mut()
                     .remove(req_handle as usize)
                     .into_parts();
-                let body = clone.inner.borrow_mut().bodies.remove(body_handle as usize);
+                let body = clone.bodies_mut().remove(body_handle as usize);
                 let req = Request::from_parts(parts, body);
                 let (parts, body) = backends.send(backend, req).unwrap().into_parts();
 
                 clone
-                    .inner
-                    .borrow_mut()
-                    .responses
+                    .responses_mut()
                     .push(Response::from_parts(parts, Body::default()));
-                clone.inner.borrow_mut().bodies.push(body);
+                clone.bodies_mut().push(body);
 
                 memory.write_i32(
                     resp_handle_out as usize,
-                    (clone.inner.borrow().responses.len() - 1) as i32,
+                    (clone.responses().len() - 1) as i32,
                 );
                 memory.write_i32(
                     resp_body_handle_out as usize,
-                    (clone.inner.borrow().bodies.len() - 1) as i32,
+                    (clone.bodies().len() - 1) as i32,
                 );
 
                 Ok(FastlyStatus::OK.code)
@@ -334,7 +358,7 @@ impl Handler {
                     "fastly_http_req::uri_set rhandle={} addr={} size={}",
                     rhandle, addr, size
                 );
-                match clone.inner.borrow_mut().requests.get_mut(rhandle as usize) {
+                match clone.requests_mut().get_mut(rhandle as usize) {
                     Some(req) => {
                         let (_, buf) = match memory!(caller).read(addr as usize, size as usize) {
                             Ok(result) => result,
@@ -354,14 +378,14 @@ impl Handler {
         &self,
         store: &Store,
     ) -> Func {
-        Func::wrap(
-            store,
-            move |_caller: Caller<'_>, _tag: i32, _ttl: i32, _swr: i32| {
-                debug!("fastly_http_req::cache_override_set");
-
-                FastlyStatus::OK.code
-            },
-        )
+        Func::wrap(store, move |_: Caller<'_>, tag: i32, ttl: i32, swr: i32| {
+            debug!(
+                "fastly_http_req::cache_override_set tag={} ttl={} swr={}",
+                tag, ttl, swr
+            );
+            // noop
+            FastlyStatus::OK.code
+        })
     }
 
     fn fastly_http_req_cache_override_v2_set(
@@ -407,7 +431,7 @@ impl Handler {
                   ending_cursor_out: i32,
                   nwritten_out: i32| {
                 debug!("fastly_http_req::header_names_get");
-                match clone.inner.borrow().requests.get(handle as usize) {
+                match clone.requests().get(handle as usize) {
                     Some(req) => {
                         let mut names: Vec<_> = req.headers().keys().map(|h| h.as_str()).collect();
                         names.sort();
@@ -461,7 +485,7 @@ impl Handler {
                   ending_cursor_out: i32,
                   nwritten_out: i32| {
                 debug!("fastly_http_req::header_values_get");
-                match clone.inner.borrow().requests.get(handle as usize) {
+                match clone.requests().get(handle as usize) {
                     Some(req) => {
                         let mut memory = memory!(caller);
                         let (_, header) = match memory.read(name_addr as usize, name_size as usize)
@@ -518,7 +542,7 @@ impl Handler {
                     "fastly_http_req::version_get handle={} version_out={}",
                     handle, version_out
                 );
-                match clone.inner.borrow().requests.get(handle as usize) {
+                match clone.requests().get(handle as usize) {
                     Some(req) => memory!(caller).write_u32(
                         version_out as usize,
                         crate::http::version(req.version()).as_u32(),
@@ -539,8 +563,8 @@ impl Handler {
         let clone = self.clone();
         Func::wrap(store, move |caller: Caller<'_>, handle_out: i32| {
             debug!("fastly_http_body::new handle_out={}", handle_out);
-            let index = clone.inner.borrow().bodies.len();
-            clone.inner.borrow_mut().bodies.push(Body::default());
+            let index = clone.bodies().len();
+            clone.bodies_mut().push(Body::default());
             memory!(caller).write_u32(handle_out as usize, index as u32);
 
             Ok(FastlyStatus::OK.code)
@@ -564,7 +588,7 @@ impl Handler {
                     "fastly_http_body::write handle={} addr={} size={} body_end={} nwritten_out={}",
                     handle, addr, size, body_end, nwritten_out
                 );
-                match clone.inner.borrow_mut().bodies.get_mut(handle as usize) {
+                match clone.bodies_mut().get_mut(handle as usize) {
                     Some(body) => {
                         let mut mem = memory!(caller);
                         let (read, buf) = match mem.read(addr as usize, size as usize) {
@@ -598,7 +622,7 @@ impl Handler {
                     whandle, status
                 );
 
-                match clone.inner.borrow_mut().responses.get_mut(whandle as usize) {
+                match clone.responses_mut().get_mut(whandle as usize) {
                     Some(response) => {
                         *response.status_mut() = hyper::http::StatusCode::from_u16(status as u16)
                             .map_err(|e| {
@@ -624,8 +648,8 @@ impl Handler {
         let clone = self.clone();
         Func::wrap(store, move |caller: Caller<'_>, handle_out: i32| {
             debug!("fastly_http_resp::new handle_out={}", handle_out);
-            let index = clone.inner.borrow().responses.len();
-            clone.inner.borrow_mut().responses.push(Response::default());
+            let index = clone.responses().len();
+            clone.responses_mut().push(Response::default());
             memory!(caller).write_u32(handle_out as usize, index as u32);
 
             Ok(FastlyStatus::OK.code)
@@ -651,7 +675,7 @@ impl Handler {
                 debug!("fastly_http_resp::header_values_get");
 
                 let mut memory = memory!(caller);
-                match clone.inner.borrow_mut().responses.get_mut(handle as usize) {
+                match clone.responses_mut().get_mut(handle as usize) {
                     Some(resp) => {
                         let name = match memory.read(name_addr as usize, name_size as usize) {
                             Ok((_, bytes)) => {
@@ -710,7 +734,7 @@ impl Handler {
                   values_size: i32| {
                 debug!("fastly_http_resp::header_values_set");
                 let mut memory = memory!(caller);
-                match clone.inner.borrow_mut().responses.get_mut(handle as usize) {
+                match clone.responses_mut().get_mut(handle as usize) {
                     Some(resp) => {
                         let name = match memory.read(name_addr as usize, name_size as usize) {
                             Ok((_, bytes)) => {
@@ -747,7 +771,7 @@ impl Handler {
                     "fastly_http_resp::status_get resp_handle={} status={}",
                     resp_handle, status
                 );
-                match clone.inner.borrow().responses.get(resp_handle as usize) {
+                match clone.responses().get(resp_handle as usize) {
                     Some(resp) => {
                         memory!(caller).write_i32(status as usize, resp.status().as_u16() as i32)
                     }
@@ -770,7 +794,7 @@ impl Handler {
                     "fastly_http_resp::version_get resp_handle={} version={}",
                     resp_handle, version_out
                 );
-                match clone.inner.borrow().responses.get(resp_handle as usize) {
+                match clone.responses().get(resp_handle as usize) {
                     Some(resp) => memory!(caller).write_u32(
                         version_out as usize,
                         crate::http::version(resp.version()).as_u32(),
