@@ -93,7 +93,7 @@ impl Handler {
         let clone = self.clone();
         Func::wrap(
             &store,
-            |caller: Caller<'_>, addr: i32, len: i32, dict: DictionaryHandle| {
+            move |caller: Caller<'_>, addr: i32, len: i32, dict: DictionaryHandle| {
                 debug!("fastly_dictionary::open");
 
                 let mut memory = memory!(caller);
