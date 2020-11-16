@@ -2,7 +2,7 @@
 
 A lightweight Fastly Compute@Edge runtime for running wasm applications locally
 
-# usage
+## usage
 
 The fastest way to get started with Compute@Edge is though [Fastly CLI](https://github.com/fastly/cli#installation)
 
@@ -20,6 +20,14 @@ This starts up a localhost HTTP server listening on port `3000`
 
 ```sh
 curl -i "http://localhost:3000"
+```
+
+### debugging
+
+Set the `RUST_LOG` env variable to `fastime=debug` and run as usual
+
+```
+RUST_LOG=fasttime=debug fasttime -w path/to/main.wasm
 ```
 
 Doug Tangren (softprops) 2020
