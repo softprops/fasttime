@@ -133,3 +133,36 @@ jobs:
           files: 'fasttime*'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Brew Bump
+      if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-latest' && env.HOMEBREW_GITHUB_API_TOKEN
+      env:
+        HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
+      run: |
+        SHA256=$(shasum -a 256 ${{ matrix.name }} | awk '{printf $1}')
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "SHA256 ${SHA256}"
+        echo "VERSION ${VERSION}"
+        brew tap softprops/tools
+        brew bump-formula-pr \
+          -f \
+          --version=${VERSION} \
+          --no-browse \
+          --no-audit \
+          --sha256=${SHA256} \
+          --url="https://github.com/softprops/fasttime/releases/download/${VERSION}/${{ matrix.name }}" \
+          softprops/tools/fasttime
+
+ publish-crate:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Rust
+        uses: hecrj/setup-rust-action@v1
+      - uses: actions/checkout@v1
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/') && env.CRATES_TOKEN
+        shell: bash
+        run: cargo publish --token ${{ env.CRATES_TOKEN }}
+        env:
+          CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
