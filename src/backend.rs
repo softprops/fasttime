@@ -60,7 +60,7 @@ impl Backend for Proxy {
             Ok(r) => r,
             Err(e) => {
                 log::error!("error calling backend {}", e);
-                Err(e)?
+                return Err(e.into())
             }
         };
         debug!("got response");
