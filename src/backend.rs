@@ -2,6 +2,7 @@ use crate::BoxError;
 use hyper::{Body, Request, Response};
 use log::debug;
 use reqwest::Client;
+use hyper::http::HeaderValue;
 
 pub trait Backend: 'static {
     fn send(
@@ -25,14 +26,14 @@ where
 }
 
 pub struct Proxy {
-    addr: String,
+    host: String,
     client: Client,
 }
 
 impl Proxy {
-    pub fn new(addr: String) -> Self {
-        let client = Client::new(); //: Client<_, hyper::Body> = Client::builder().build(HttpsConnector::new());
-        Proxy { addr, client }
+    pub fn new(host: String) -> Self {
+        let client = Client::new();
+        Proxy { host, client }
     }
 }
 
@@ -42,7 +43,8 @@ impl Backend for Proxy {
         backend: &str,
         req: Request<Body>,
     ) -> Result<Response<Body>, BoxError> {
-        debug!("proxying backend '{}' to '{}'", backend, self.addr);
+        debug!("proxying backend '{}' to '{}'", backend, self.host);
+
         let mut rreq = reqwest::Request::new(
             req.method().clone(),
             req.uri()
@@ -51,8 +53,9 @@ impl Backend for Proxy {
                 .expect("invalid uri"),
         );
         *rreq.headers_mut() = req.headers().clone();
+        rreq.headers_mut().remove("host");
         rreq.headers_mut()
-            .append("host", hyper::http::HeaderValue::from_static("httpbin.org"));
+            .append("host", HeaderValue::from_str(&self.host)?);
 
         let rresp = match futures_executor::block_on(self.client.execute(rreq)) {
             Ok(r) => r,
