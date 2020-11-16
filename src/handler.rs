@@ -6,10 +6,11 @@ use fastly_shared::FastlyStatus;
 use http::{request::Parts as RequestParts, response::Parts as ResponseParts};
 use hyper::{Body, Request, Response};
 use log::debug;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wasmtime::{Caller, Extern, Func, Linker, Module, Store, Trap};
 use wasmtime_wasi::{Wasi, WasiCtxBuilder};
 
+type DictionaryHandle = i32;
 type RequestHandle = i32;
 type ResponseHandle = i32;
 type BodyHandle = i32;
@@ -31,6 +32,8 @@ struct Inner {
     bodies: Vec<Body>,
     /// final handler response
     response: Response<Body>,
+    /// list of loaded dictionaries
+    dictionaries: HashMap<String, String>,
 }
 
 #[derive(Default, Clone)]
@@ -81,6 +84,54 @@ impl Handler {
             return Err(Trap::new("wasm module does not define a `_start` func").into());
         }
         Ok(self.into_response())
+    }
+
+    fn fastly_dictionary_open(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(
+            &store,
+            |caller: Caller<'_>, addr: i32, len: i32, dict: DictionaryHandle| {
+                debug!("fastly_dictionary::open");
+
+                let mut memory = memory!(caller);
+                let (_, buf) = match memory!(caller).read(addr, len) {
+                    Ok(result) => result,
+                    _ => return Err(Trap::new("failed to read dictionary name")),
+                };
+                let name = std::str::from_utf8(&buf).unwrap();
+                debug!("opening dictionary {}", name);
+                let index = clone.inner.borrow().dictionaries.len();
+                clone
+                    .inner
+                    .borrow_mut()
+                    .dictionaries
+                    .push(HashMap::default());
+                memory.write_i32(dict, index as i32);
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+    fn fastly_dictionary_get(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(
+            &store,
+            |caller: Caller<'_>,
+             dict_handle: DictionaryHandle,
+             key: i32,
+             key_len: i32,
+             value: i32,
+             value_max_len: i32,
+             nwritten: i32| {
+                debug!("fastly_dictionary::get");
+                FastlyStatus::OK.code
+            },
+        )
     }
 
     fn body_downstream_get(
@@ -794,6 +845,14 @@ impl Handler {
         linker.func("fastly_abi", "init", self.one_i64("fastly_abi:init"))?;
 
         linker.func("fastly_uap", "parse", self.none("fastly_uap::parse"))?;
+
+        linker
+            .define("fastly_dictionary", "open", fastly_dictionary_open(&store))?
+            .define(
+                "fastly_dictionary",
+                "get",
+                self.fastly_dictionary_get(&store),
+            )?;
 
         // fastly log funcs
 
