@@ -19,7 +19,7 @@ mod convert;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
-/// ⏱️  A local Fastly Compute@Edge server emulator
+/// ⏱️  A local Fastly Compute@Edge runtime emulator
 #[derive(Debug, StructOpt)]
 struct Opts {
     /// Path to .wasm file
@@ -77,7 +77,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                     Store::new(&engine),
                                     backend.map_or_else::<Box<dyn backend::Backend>, _, _>(
                                         || Box::new(backend::default()),
-                                        |s| Box::new(backend::Proxy::new(s)),
+                                        |host| Box::new(backend::Proxy::new(host)),
                                     ),
                                 )
                                 .map_err(|e| {

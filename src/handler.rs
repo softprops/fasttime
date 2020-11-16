@@ -215,7 +215,7 @@ impl Handler {
                             _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                         }
                     }
-                    _ => return Err( Trap::i32_exit(FastlyStatus::HTTPPARSE.code)),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::HTTPPARSE.code)),
                 };
 
                 Ok(FastlyStatus::OK.code)
@@ -250,7 +250,7 @@ impl Handler {
                         };
                         mem.write_u32(nwritten_out, written as u32);
                     }
-                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
 
                 Ok(FastlyStatus::OK.code)
@@ -327,9 +327,9 @@ impl Handler {
                             _ => return Err(Trap::new("failed to read request uri")),
                         };
                         req.uri = hyper::Uri::from_maybe_shared(buf)
-                            .map_err(|_|  Trap::i32_exit(FastlyStatus::HTTPPARSE.code))?;
+                            .map_err(|_| Trap::i32_exit(FastlyStatus::HTTPPARSE.code))?;
                     }
-                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
                 Ok(FastlyStatus::OK.code)
             },
@@ -422,7 +422,7 @@ impl Handler {
                             },
                         );
                     }
-                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
 
                 Ok(FastlyStatus::OK.code)
@@ -483,7 +483,7 @@ impl Handler {
                             },
                         );
                     }
-                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
 
                 Ok(FastlyStatus::OK.code)
@@ -506,7 +506,7 @@ impl Handler {
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => memory!(caller)
                         .write_u32(version_out, crate::convert::version(req.version).as_u32()),
-                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
                 Ok(FastlyStatus::OK.code)
             },
@@ -573,28 +573,25 @@ impl Handler {
         store: &Store,
     ) -> Func {
         let clone = self.clone();
-        Func::wrap(
-            store,
-            move |whandle: ResponseHandle, status: i32| {
-                debug!(
-                    "fastly_http_resp::status_set whandle={} status={}",
-                    whandle, status
-                );
+        Func::wrap(store, move |whandle: ResponseHandle, status: i32| {
+            debug!(
+                "fastly_http_resp::status_set whandle={} status={}",
+                whandle, status
+            );
 
-                match clone.inner.borrow_mut().responses.get_mut(whandle as usize) {
-                    Some(response) => {
-                        response.status = hyper::http::StatusCode::from_u16(status as u16)
-                            .map_err(|_| {
-                                debug!("invalid http status");
-                                Trap::i32_exit(FastlyStatus::HTTPPARSE.code)
-                            })?;
-                    }
-                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
+            match clone.inner.borrow_mut().responses.get_mut(whandle as usize) {
+                Some(response) => {
+                    response.status =
+                        hyper::http::StatusCode::from_u16(status as u16).map_err(|_| {
+                            debug!("invalid http status");
+                            Trap::i32_exit(FastlyStatus::HTTPPARSE.code)
+                        })?;
                 }
+                _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
+            }
 
-                Ok(FastlyStatus::OK.code)
-            },
-        )
+            Ok(FastlyStatus::OK.code)
+        })
     }
 
     fn fastly_http_resp_new(
@@ -764,16 +761,13 @@ impl Handler {
         &self,
         store: &Store,
     ) -> Func {
-        Func::wrap(
-            store,
-            move |whandle: ResponseHandle, version: i32| {
-                debug!(
-                    "fastly_http_resp::version_set handle={} version={}",
-                    whandle, version
-                );
-                Ok(FastlyStatus::OK.code)
-            },
-        )
+        Func::wrap(store, move |whandle: ResponseHandle, version: i32| {
+            debug!(
+                "fastly_http_resp::version_set handle={} version={}",
+                whandle, version
+            );
+            Ok(FastlyStatus::OK.code)
+        })
     }
 
     /// Builds a new linker given a provided `Store`
