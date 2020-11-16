@@ -1078,6 +1078,7 @@ mod tests {
     use super::*;
     use hyper::Request;
     use std::path::Path;
+    use wasmtime::Engine;
 
     #[tokio::test]
     async fn it_works() -> Result<(), BoxError> {
@@ -1091,7 +1092,7 @@ mod tests {
         let response = Handler::new(Request::default()).run(
             &module,
             Store::new(&engine),
-            Box::new(backend::default()),
+            Box::new(crate::backend::default()),
         )?;
         println!("{:?}", response.status());
         let bytes = hyper::body::to_bytes(response.into_body()).await?;
