@@ -1,0 +1,106 @@
+name: Main
+
+on: push
+
+jobs:
+  codestyle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Rust
+        uses: hecrj/setup-rust-action@v1
+        with:
+          components: rustfmt
+      - uses: actions/checkout@v2
+      - run: cargo fmt --all -- --check
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Rust
+        uses: hecrj/setup-rust-action@v1
+        with:
+          components: clippy
+      - uses: actions/checkout@v2
+      - run: cargo clippy --all-targets --all-features -- -D clippy::all
+
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Rust
+        uses: hecrj/setup-rust-action@v1
+      - uses: actions/checkout@v2
+      - run: cargo check --all
+
+  test:
+    needs: [codestyle, lint, compile]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+        rust: [stable, beta, nightly]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Setup Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Test
+      run: cargo test --verbose
+
+  release:
+    needs: [test]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            rust: stable
+            target: x86_64-unknown-linux-musl
+            bin: 'fasttime'
+            name: 'fasttime-Linux-x86_64.tar.gz'
+          - os: windows-latest
+            rust: stable
+            target: x86_64-pc-windows-msvc
+            bin: 'fasttime.exe'
+            name: 'fasttime-Windows-x86_64.zip'
+          - os: macOS-latest
+            rust: stable
+            target: x86_64-apple-darwin
+            bin: 'fasttime'
+            name: 'fasttime-Darwin-x86_64.tar.gz'
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Setup Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+        targets: ${{ matrix.target }}
+    - name: Setup musl-gcc
+      if: contains(matrix.target, 'musl')
+      run: |
+        sudo apt-get install musl-tools
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+    - name: Package
+      shell: bash
+      run: |
+        strip target/${{ matrix.target }}/release/${{ matrix.bin }}
+        cd target/${{ matrix.target }}/release
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]
+        then
+          7z a ../../../${{ matrix.name }} ${{ matrix.bin }}
+        else
+          tar czvf ../../../${{ matrix.name }} ${{ matrix.bin }}
+        fi
+        cd -
+    - name: Publish
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+          files: 'fasttime*'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
