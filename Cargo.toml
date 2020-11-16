@@ -22,3 +22,5 @@ reqwest =  { version = "0.10", features = ["rustls-tls"], default_features = fal
 futures-executor = "0.3"
 http = "0.2"
 colored = "2.0.0"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }

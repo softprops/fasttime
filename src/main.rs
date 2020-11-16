@@ -1,3 +1,8 @@
+mod backend;
+mod convert;
+mod geo;
+mod memory;
+
 use anyhow::anyhow;
 use hyper::{
     service::{make_service_fn, service_fn},
@@ -7,16 +12,15 @@ use std::{error::Error, path::PathBuf, time::SystemTime};
 use structopt::StructOpt;
 use wasmtime::{Engine, Module, Store};
 mod handler;
-mod memory;
-use handler::Handler;
-mod backend;
+
 use backend::Backends;
+use handler::Handler;
 use http::{
     header::HOST,
     uri::{Authority, Scheme, Uri},
     Request, Response,
 };
-mod convert;
+
 use colored::Colorize;
 use hyper::server::conn::AddrStream;
 use std::{collections::HashMap, error::Error as StdError, process::exit, str::FromStr};
