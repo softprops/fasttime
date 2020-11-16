@@ -1,6 +1,7 @@
 use fastly_shared::HttpVersion;
 use hyper::Version;
 
+/// Translate a hyper representation of HTTP version to Fastly's representation
 pub fn version(version: Version) -> HttpVersion {
     match version {
         Version::HTTP_09 => HttpVersion::Http09,
