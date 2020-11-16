@@ -18,7 +18,10 @@ use http::{
 };
 mod convert;
 use colored::Colorize;
-use std::{collections::HashMap, error::Error as StdError, process::exit, str::FromStr};
+use hyper::server::conn::AddrStream;
+use std::{
+    collections::HashMap, error::Error as StdError, net::SocketAddr, process::exit, str::FromStr,
+};
 use tokio::task::spawn_blocking;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -48,6 +51,8 @@ fn parse_dictionary(s: &str) -> Result<(String, HashMap<String, String>), Box<dy
         });
     Ok((name, dict?))
 }
+
+struct ClientIp(SocketAddr);
 
 /// ⏱️  A local Fastly Compute@Edge runtime emulator
 #[derive(Debug, StructOpt)]
@@ -108,11 +113,13 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
 
     let addr = ([127, 0, 0, 1], port).into();
     let state = (module, engine, backend.clone(), dictionary.clone());
-    let server = Server::try_bind(&addr)?.serve(make_service_fn(move |_| {
+    let server = Server::try_bind(&addr)?.serve(make_service_fn(move |conn: &AddrStream| {
         let state = state.clone();
+        let client_ip = conn.remote_addr();
         async move {
-            Ok::<_, anyhow::Error>(service_fn(move |req| {
+            Ok::<_, anyhow::Error>(service_fn(move |mut req| {
                 let (module, engine, backend, dictionary) = state.clone();
+                req.extensions_mut().insert(ClientIp(client_ip));
                 async move {
                     Ok::<Response<hyper::Body>, anyhow::Error>(
                         spawn_blocking(move || {
