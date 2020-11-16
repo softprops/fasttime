@@ -105,9 +105,11 @@ impl Handler {
                 let name = std::str::from_utf8(&buf).unwrap();
                 debug!("opening dictionary {}", name);
                 let index = clone.inner.borrow().dictionaries.len();
-                let dict: HashMap<String, String> =
-                    dictionaries.get(name).cloned().unwrap_or_default();
-                clone.inner.borrow_mut().dictionaries.push(dict);
+                clone
+                    .inner
+                    .borrow_mut()
+                    .dictionaries
+                    .push(dictionaries.get(name).cloned().unwrap_or_default());
                 memory.write_i32(dict_out, index as i32);
                 Ok(FastlyStatus::OK.code)
             },
