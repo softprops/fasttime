@@ -11,7 +11,11 @@ mod memory;
 use handler::Handler;
 mod backend;
 use backend::Backend;
-mod http;
+use http::{
+    header::HOST,
+    uri::{Authority, Parts as UriParts, Scheme, Uri},
+};
+mod convert;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
@@ -55,17 +59,16 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
             Ok::<_, anyhow::Error>(service_fn(move |mut req| {
                 let (module, engine, backend) = state.clone();
                 async move {
-                    // re-writing uri to a host and authority. fastly requests validate these are present before sending them upstream
-                    *req.uri_mut() = format!(
-                        "http://{}{}",
-                        req.headers()
-                            .get("host")
+                    // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
+                    *req.uri_mut() = Uri::from_parts(UriParts {
+                        scheme: Some(Scheme::HTTP),
+                        authority: req
+                            .headers()
+                            .get(HOST)
                             .and_then(|h| h.to_str().ok())
-                            .unwrap(),
-                        req.uri()
-                    )
-                    .parse()
-                    .unwrap();
+                            .and_then(|s| s.parse::<Authority>().ok()),
+                        ..req.uri().clone().into_parts()
+                    })?;
                     Ok::<hyper::Response<hyper::Body>, anyhow::Error>(
                         tokio::task::spawn_blocking(move || {
                             Handler::new(req)
@@ -78,7 +81,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                     ),
                                 )
                                 .map_err(|e| {
-                                    log::debug!("handler::run error: {}", e);
+                                    log::debug!("Handler::run error: {}", e);
                                     anyhow!(e.to_string())
                                 })
                         })

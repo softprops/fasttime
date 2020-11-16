@@ -396,7 +396,7 @@ impl Handler {
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => {
                         let mut names: Vec<_> = req.headers.keys().map(|h| h.as_str()).collect();
-                        names.sort();
+                        names.sort_unstable();
                         let mut memory = memory!(caller);
                         let ucursor = cursor as usize;
                         if ucursor >= names.len() {
@@ -505,7 +505,7 @@ impl Handler {
                 );
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => memory!(caller)
-                        .write_u32(version_out, crate::http::version(req.version).as_u32()),
+                        .write_u32(version_out, crate::convert::version(req.version).as_u32()),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
                 Ok(FastlyStatus::OK.code)
@@ -754,7 +754,7 @@ impl Handler {
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
                     Some(resp) => memory!(caller)
-                        .write_u32(version_out, crate::http::version(resp.version).as_u32()),
+                        .write_u32(version_out, crate::convert::version(resp.version).as_u32()),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
 

@@ -1,8 +1,7 @@
 use crate::BoxError;
-use hyper::{Body, Request, Response};
+use hyper::{http::HeaderValue, Body, Request, Response};
 use log::debug;
 use reqwest::Client;
-use hyper::http::HeaderValue;
 
 pub trait Backend: 'static {
     fn send(
