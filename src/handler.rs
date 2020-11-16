@@ -69,7 +69,7 @@ impl Handler {
         mut self,
         module: &Module,
         store: Store,
-        backends: Box<dyn crate::Backend>,
+        backends: Box<dyn crate::Backends>,
     ) -> Result<Response<Body>, BoxError> {
         if let Some(func) = self
             .linker(store, backends)?
@@ -261,7 +261,7 @@ impl Handler {
     fn fastly_http_req_send(
         &self,
         store: &Store,
-        backends: Box<dyn crate::Backend>,
+        backends: Box<dyn crate::Backends>,
     ) -> Func {
         let clone = self.clone();
         Func::wrap(
@@ -775,7 +775,7 @@ impl Handler {
     fn linker(
         &mut self,
         store: Store,
-        backends: Box<dyn crate::Backend>,
+        backends: Box<dyn crate::Backends>,
     ) -> Result<Linker, BoxError> {
         let wasi = Wasi::new(
             &store,

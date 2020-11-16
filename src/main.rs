@@ -10,16 +10,31 @@ mod handler;
 mod memory;
 use handler::Handler;
 mod backend;
-use backend::Backend;
+use backend::Backends;
 use http::{
     header::HOST,
     uri::{Authority, Scheme, Uri},
     Request, Response,
 };
 mod convert;
+use colored::Colorize;
+use std::{error::Error as StdError, process::exit, str::FromStr};
 use tokio::task::spawn_blocking;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
+
+fn parse_key_val<T, U>(s: &str) -> Result<(T, U), Box<dyn StdError>>
+where
+    T: FromStr,
+    T::Err: StdError + 'static,
+    U: FromStr,
+    U::Err: StdError + 'static,
+{
+    let pos = s
+        .find(':')
+        .ok_or_else(|| format!("invalid KEY:value: no `:` found in `{}`", s))?;
+    Ok((s[..pos].parse()?, s[pos + 1..].parse()?))
+}
 
 /// ⏱️  A local Fastly Compute@Edge runtime emulator
 #[derive(Debug, StructOpt)]
@@ -30,9 +45,9 @@ struct Opts {
     /// Port to listen on (defaults to 3000)
     #[structopt(long, short, default_value = "3000")]
     port: u16,
-    /// Backend to proxy
-    #[structopt(long, short)]
-    backend: Option<String>,
+    /// Backend to proxy in backend-name:host format (foo:foo.org)
+    #[structopt(long, short, parse(try_from_str = parse_key_val))]
+    backend: Vec<(String, String)>,
 }
 
 // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
@@ -65,17 +80,18 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
 
     // Loading a module significant amount of time depending on the size
     // of the module but only needs to happen once per application
-    println!("⏱️  Loading module...");
+    println!("{}  Loading module...", " ◌".dimmed());
     let s = SystemTime::now();
     let module = Module::from_file(&engine, wasm)?;
     println!(
-        " ✔ Loaded module in {:?} ✨",
+        " {} Loaded module in {:?} ✨",
+        "✔".bold().green(),
         s.elapsed().unwrap_or_default()
     );
 
     let addr = ([127, 0, 0, 1], port).into();
-    let state = (module, engine, backend);
-    let server = Server::bind(&addr).serve(make_service_fn(move |_| {
+    let state = (module, engine, backend.clone());
+    let server = Server::try_bind(&addr)?.serve(make_service_fn(move |_| {
         let state = state.clone();
         async move {
             Ok::<_, anyhow::Error>(service_fn(move |req| {
@@ -87,10 +103,11 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                 .run(
                                     &module,
                                     Store::new(&engine),
-                                    backend.map_or_else::<Box<dyn backend::Backend>, _, _>(
-                                        backend::default,
-                                        |host| Box::new(backend::Proxy::new(host)),
-                                    ),
+                                    if backend.is_empty() {
+                                        backend::default()
+                                    } else {
+                                        Box::new(backend::Proxy::new(backend.into_iter().collect()))
+                                    },
                                 )
                                 .map_err(|e| {
                                     log::debug!("Handler::run error: {}", e);
@@ -104,7 +121,13 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         }
     }));
 
-    println!("🟢 Listening on http://{}", addr);
+    println!(" {} Listening on http://{}", "●".bold().green(), addr);
+    if !backend.is_empty() {
+        println!("   {} Backends", "❯".dimmed());
+        for (name, host) in backend {
+            println!("     {} > {}", name, host);
+        }
+    }
 
     server.await?;
 
@@ -112,8 +135,10 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), BoxError> {
+async fn main() {
     pretty_env_logger::init();
-    run(Opts::from_args()).await?;
-    Ok(())
+    if let Err(e) = run(Opts::from_args()).await {
+        eprintln!(" {} error: {}", "✖".bold().red(), e);
+        exit(1);
+    }
 }
