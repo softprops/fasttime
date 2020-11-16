@@ -13,7 +13,7 @@ mod backend;
 use backend::Backend;
 use http::{
     header::HOST,
-    uri::{Authority, Parts as UriParts, Scheme, Uri},
+    uri::{Authority, Scheme, Uri},
 };
 mod convert;
 
@@ -60,15 +60,15 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                 let (module, engine, backend) = state.clone();
                 async move {
                     // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
-                    *req.uri_mut() = Uri::from_parts(UriParts {
-                        scheme: Some(Scheme::HTTP),
-                        authority: req
-                            .headers()
-                            .get(HOST)
-                            .and_then(|h| h.to_str().ok())
-                            .and_then(|s| s.parse::<Authority>().ok()),
-                        ..req.uri().clone().into_parts()
-                    })?;
+                    let mut uri = req.uri().clone().into_parts();
+                    uri.scheme = Some(Scheme::HTTP);
+                    uri.authority = req
+                        .headers()
+                        .get(HOST)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse::<Authority>().ok());
+                    *req.uri_mut() = Uri::from_parts(uri)?;
+
                     Ok::<hyper::Response<hyper::Body>, anyhow::Error>(
                         tokio::task::spawn_blocking(move || {
                             Handler::new(req)
