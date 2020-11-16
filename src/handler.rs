@@ -200,8 +200,14 @@ impl Handler {
             &store,
             move |caller: Caller<'_>, addr: i32, num_written: i32| {
                 let mut memory = memory!(caller);
-                debug!("fastly_http_req::downstream_client_ip_addr addr={} num_written={}", addr, num_written);
-                debug!("fastly_http_req::downstream_client_ip_addr => {}", ip.to_string());
+                debug!(
+                    "fastly_http_req::downstream_client_ip_addr addr={} num_written={}",
+                    addr, num_written
+                );
+                debug!(
+                    "fastly_http_req::downstream_client_ip_addr => {}",
+                    ip.to_string()
+                );
                 let bytes = match ip {
                     IpAddr::V4(ip) => ip.octets().to_vec(),
                     IpAddr::V6(ip) => ip.octets().to_vec(),
