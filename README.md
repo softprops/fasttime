@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-   A lightweight Fastly Compute@Edge runtime for running wasm applications locally
+   A lightweight Fastly [Compute@Edge](https://www.fastly.com/products/edge-compute/serverless/) runtime for running wasm applications locally
 </p>
 
 <div align="center">
@@ -17,9 +17,15 @@
 
 <br />
 
+## about
+
+Fastly allows you to run WASM request within a WASI-based runtime on its edge servers. `fasttime` implements those
+runtime interfaces using wasmtime hosted on a local HTTP server allowing you to run you Compute@Edge applications locally
+on your laptop.
+
 ## 🤸 usage
 
-The fastest way to get started with Compute@Edge is though [Fastly CLI](https://github.com/fastly/cli#installation)
+The fastest way to get started with [Compute@Edge](https://www.fastly.com/products/edge-compute/serverless/) is though [Fastly CLI](https://github.com/fastly/cli#installation)
 
 ```sh
 $ fastly compute build
