@@ -1083,7 +1083,7 @@ mod tests {
         let response = Handler::new(Request::default()).run(
             &module,
             Store::new(&engine),
-            Box::new(crate::backend::default()),
+            crate::backend::default(),
         )?;
         println!("{:?}", response.status());
         let bytes = hyper::body::to_bytes(response.into_body()).await?;
