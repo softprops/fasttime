@@ -18,12 +18,12 @@ use http::{
 };
 mod convert;
 use colored::Colorize;
-use std::{error::Error as StdError, process::exit, str::FromStr};
+use std::{collections::HashMap, error::Error as StdError, process::exit, str::FromStr};
 use tokio::task::spawn_blocking;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
-fn parse_key_val<T, U>(s: &str) -> Result<(T, U), Box<dyn StdError>>
+fn parse_key_value<T, U>(s: &str) -> Result<(T, U), Box<dyn StdError>>
 where
     T: FromStr,
     T::Err: StdError + 'static,
@@ -36,6 +36,19 @@ where
     Ok((s[..pos].parse()?, s[pos + 1..].parse()?))
 }
 
+fn parse_dictionary(s: &str) -> Result<(String, HashMap<String, String>), Box<dyn StdError>> {
+    let (name, v) = parse_key_value::<String, String>(s)?;
+    let dict: Result<HashMap<String, String>, Box<dyn StdError>> =
+        v.split(',').try_fold(HashMap::default(), |mut res, el| {
+            let pos = el
+                .find('=')
+                .ok_or_else(|| format!("invalid KEY=value: no `=` found in `{}`", el))?;
+            res.insert(el[..pos].parse()?, el[pos + 1..].parse()?);
+            Ok(res)
+        });
+    Ok((name, dict?))
+}
+
 /// ⏱️  A local Fastly Compute@Edge runtime emulator
 #[derive(Debug, StructOpt)]
 struct Opts {
@@ -46,8 +59,11 @@ struct Opts {
     #[structopt(long, short, default_value = "3000")]
     port: u16,
     /// Backend to proxy in backend-name:host format (foo:foo.org)
-    #[structopt(long, short, parse(try_from_str = parse_key_val))]
+    #[structopt(long, short, parse(try_from_str = parse_key_value))]
     backend: Vec<(String, String)>,
+    /// Edge dictionary in dictionary-name:key=value,key=value format
+    #[structopt(long, short, parse(try_from_str = parse_dictionary))]
+    dictionary: Vec<(String, HashMap<String, String>)>,
 }
 
 // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
@@ -75,6 +91,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         wasm,
         port,
         backend,
+        dictionary,
     } = opts;
     let engine = Engine::default();
 
@@ -90,12 +107,12 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     );
 
     let addr = ([127, 0, 0, 1], port).into();
-    let state = (module, engine, backend.clone());
+    let state = (module, engine, backend.clone(), dictionary.clone());
     let server = Server::try_bind(&addr)?.serve(make_service_fn(move |_| {
         let state = state.clone();
         async move {
             Ok::<_, anyhow::Error>(service_fn(move |req| {
-                let (module, engine, backend) = state.clone();
+                let (module, engine, backend, dictionary) = state.clone();
                 async move {
                     Ok::<Response<hyper::Body>, anyhow::Error>(
                         spawn_blocking(move || {
@@ -108,6 +125,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                     } else {
                                         Box::new(backend::Proxy::new(backend.into_iter().collect()))
                                     },
+                                    dictionary.into_iter().collect(),
                                 )
                                 .map_err(|e| {
                                     log::debug!("Handler::run error: {}", e);

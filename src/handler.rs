@@ -73,9 +73,10 @@ impl Handler {
         module: &Module,
         store: Store,
         backends: Box<dyn crate::Backends>,
+        dicionaries: HashMap<String, HashMap<String, String>>,
     ) -> Result<Response<Body>, BoxError> {
         if let Some(func) = self
-            .linker(store, backends)?
+            .linker(store, backends, dicionaries)?
             .instantiate(&module)?
             .get_func("_start")
         {
@@ -89,6 +90,7 @@ impl Handler {
     fn fastly_dictionary_open(
         &self,
         store: &Store,
+        dictionaries: HashMap<String, HashMap<String, String>>,
     ) -> Func {
         let clone = self.clone();
         Func::wrap(
@@ -103,7 +105,8 @@ impl Handler {
                 let name = std::str::from_utf8(&buf).unwrap();
                 debug!("opening dictionary {}", name);
                 let index = clone.inner.borrow().dictionaries.len();
-                let dict: HashMap<String, String> = HashMap::default();
+                let dict: HashMap<String, String> =
+                    dictionaries.get(name).cloned().unwrap_or_default();
                 clone.inner.borrow_mut().dictionaries.push(dict);
                 memory.write_i32(dict_out, index as i32);
                 Ok(FastlyStatus::OK.code)
@@ -844,6 +847,7 @@ impl Handler {
         &mut self,
         store: Store,
         backends: Box<dyn crate::Backends>,
+        dictionaries: HashMap<String, HashMap<String, String>>,
     ) -> Result<Linker, BoxError> {
         let wasi = Wasi::new(
             &store,
@@ -867,7 +871,7 @@ impl Handler {
             .define(
                 "fastly_dictionary",
                 "open",
-                self.fastly_dictionary_open(&store),
+                self.fastly_dictionary_open(&store, dictionaries),
             )?
             .define(
                 "fastly_dictionary",
