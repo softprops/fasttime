@@ -14,7 +14,7 @@ use backend::Backend;
 use http::{
     header::HOST,
     uri::{Authority, Scheme, Uri},
-    Response,
+    Request, Response,
 };
 mod convert;
 use tokio::task::spawn_blocking;
@@ -33,6 +33,20 @@ struct Opts {
     /// Backend to proxy
     #[structopt(long, short)]
     backend: Option<String>,
+}
+
+// re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
+fn rewrite_uri(req: Request<hyper::Body>) -> Result<Request<hyper::Body>, BoxError> {
+    let mut req = req;
+    let mut uri = req.uri().clone().into_parts();
+    uri.scheme = Some(Scheme::HTTP);
+    uri.authority = req
+        .headers()
+        .get(HOST)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.parse::<Authority>().ok());
+    *req.uri_mut() = Uri::from_parts(uri)?;
+    Ok(req)
 }
 
 async fn run(opts: Opts) -> Result<(), BoxError> {
@@ -58,22 +72,12 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     let server = Server::bind(&addr).serve(make_service_fn(move |_| {
         let state = state.clone();
         async move {
-            Ok::<_, anyhow::Error>(service_fn(move |mut req| {
+            Ok::<_, anyhow::Error>(service_fn(move |req| {
                 let (module, engine, backend) = state.clone();
                 async move {
-                    // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
-                    let mut uri = req.uri().clone().into_parts();
-                    uri.scheme = Some(Scheme::HTTP);
-                    uri.authority = req
-                        .headers()
-                        .get(HOST)
-                        .and_then(|h| h.to_str().ok())
-                        .and_then(|s| s.parse::<Authority>().ok());
-                    *req.uri_mut() = Uri::from_parts(uri)?;
-
                     Ok::<Response<hyper::Body>, anyhow::Error>(
                         spawn_blocking(move || {
-                            Handler::new(req)
+                            Handler::new(rewrite_uri(req).expect("invalid uri"))
                                 .run(
                                     &module,
                                     Store::new(&engine),
