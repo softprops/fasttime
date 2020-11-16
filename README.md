@@ -1,6 +1,21 @@
-# fasttime
+<h1 align="center">
+  fasttime
+</h1>
 
-A lightweight Fastly Compute@Edge runtime for running wasm applications locally
+<p align="center">
+   A lightweight Fastly Compute@Edge runtime for running wasm applications locally
+</p>
+
+<div align="center">
+  <a alt="GitHub Actions" href="https://github.com/softprops/fasttime/actions">
+    <img src="https://github.com/softprops/fasttime/workflows/Main/badge.svg"/>
+  </a>
+  <a alt="license" href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-brightgreen.svg"/>
+  </a>
+</div>
+
+<br />
 
 ## usage
 
