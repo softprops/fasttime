@@ -33,7 +33,7 @@ struct Inner {
     /// final handler response
     response: Response<Body>,
     /// list of loaded dictionaries
-    dictionaries: HashMap<String, String>,
+    dictionaries: Vec<HashMap<String, String>>,
 }
 
 #[derive(Default, Clone)]
@@ -847,7 +847,11 @@ impl Handler {
         linker.func("fastly_uap", "parse", self.none("fastly_uap::parse"))?;
 
         linker
-            .define("fastly_dictionary", "open", fastly_dictionary_open(&store))?
+            .define(
+                "fastly_dictionary",
+                "open",
+                self.fastly_dictionary_open(&store),
+            )?
             .define(
                 "fastly_dictionary",
                 "get",
