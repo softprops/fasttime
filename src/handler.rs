@@ -93,9 +93,8 @@ impl Handler {
         let clone = self.clone();
         Func::wrap(
             &store,
-            move |caller: Caller<'_>, addr: i32, len: i32, dict: DictionaryHandle| {
+            move |caller: Caller<'_>, addr: i32, len: i32, dict_out: DictionaryHandle| {
                 debug!("fastly_dictionary::open");
-
                 let mut memory = memory!(caller);
                 let (_, buf) = match memory!(caller).read(addr, len) {
                     Ok(result) => result,
@@ -104,12 +103,9 @@ impl Handler {
                 let name = std::str::from_utf8(&buf).unwrap();
                 debug!("opening dictionary {}", name);
                 let index = clone.inner.borrow().dictionaries.len();
-                clone
-                    .inner
-                    .borrow_mut()
-                    .dictionaries
-                    .push(HashMap::default());
-                memory.write_i32(dict, index as i32);
+                let dict: HashMap<String, String> = HashMap::default();
+                clone.inner.borrow_mut().dictionaries.push(dict);
+                memory.write_i32(dict_out, index as i32);
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -121,15 +117,36 @@ impl Handler {
         let clone = self.clone();
         Func::wrap(
             &store,
-            |caller: Caller<'_>,
-             dict_handle: DictionaryHandle,
-             key: i32,
-             key_len: i32,
-             value: i32,
-             value_max_len: i32,
-             nwritten: i32| {
+            move |caller: Caller<'_>,
+                  dict_handle: DictionaryHandle,
+                  key_addr: i32,
+                  key_len: i32,
+                  value_addr: i32,
+                  value_max_len: i32,
+                  nwritten: i32| {
                 debug!("fastly_dictionary::get");
-                FastlyStatus::OK.code
+                match clone.inner.borrow().dictionaries.get(dict_handle as usize) {
+                    Some(dict) => {
+                        let mut memory = memory!(caller);
+                        let (_, buf) = match memory!(caller).read(key_addr, key_len) {
+                            Ok(result) => result,
+                            _ => return Err(Trap::new("failed to read dictionary name")),
+                        };
+                        let key = std::str::from_utf8(&buf).unwrap();
+                        debug!("getting dictionary key {}", key);
+                        match dict.get(key) {
+                            Some(value) => match memory.write(value_addr, &value.as_bytes()) {
+                                Ok(written) => {
+                                    memory.write_i32(nwritten, written as i32);
+                                }
+                                _ => return Err(Trap::new("failed to write dictionary value")),
+                            },
+                            _ => memory.write_i32(nwritten, 0),
+                        }
+                    }
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
+                }
+                Ok(FastlyStatus::OK.code)
             },
         )
     }
