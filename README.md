@@ -61,7 +61,7 @@ $ fasttime -w path/to/main.wasm \
      -d dictionary-two:baz=boom
 ```
 
-### debugging
+### 🔍 debugging
 
 Set the `RUST_LOG` env variable to `fastime=debug` and run as usual
 
