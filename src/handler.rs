@@ -188,7 +188,7 @@ impl Handler {
                         };
                         mem.write_u32(nwritten_out, written as u32);
                     }
-                    _ => return Err(Trap::new("Invalid body handle")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 };
 
                 Ok(FastlyStatus::OK.code)
@@ -212,10 +212,10 @@ impl Handler {
                     Ok(method) => {
                         match clone.inner.borrow_mut().requests.get_mut(handle as usize) {
                             Some(req) => req.method = method,
-                            _ => return Err(Trap::new("invalid request handler")),
+                            _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                         }
                     }
-                    _ => return Err(Trap::new("invalid http method")),
+                    _ => return Err( Trap::i32_exit(FastlyStatus::HTTPPARSE.code)),
                 };
 
                 Ok(FastlyStatus::OK.code)
@@ -250,7 +250,7 @@ impl Handler {
                         };
                         mem.write_u32(nwritten_out, written as u32);
                     }
-                    _ => return Err(Trap::new("invalid request handle")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
                 }
 
                 Ok(FastlyStatus::OK.code)
@@ -327,9 +327,9 @@ impl Handler {
                             _ => return Err(Trap::new("failed to read request uri")),
                         };
                         req.uri = hyper::Uri::from_maybe_shared(buf)
-                            .map_err(|_| Trap::new("invalid uri"))?;
+                            .map_err(|_|  Trap::i32_exit(FastlyStatus::HTTPPARSE.code))?;
                     }
-                    _ => return Err(Trap::new("invalid request handle")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
                 }
                 Ok(FastlyStatus::OK.code)
             },
@@ -422,7 +422,7 @@ impl Handler {
                             },
                         );
                     }
-                    _ => return Err(Trap::new("invalid request handle")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
                 }
 
                 Ok(FastlyStatus::OK.code)
@@ -483,7 +483,7 @@ impl Handler {
                             },
                         );
                     }
-                    _ => return Err(Trap::new("invalid request handle")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
                 }
 
                 Ok(FastlyStatus::OK.code)
@@ -506,7 +506,7 @@ impl Handler {
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => memory!(caller)
                         .write_u32(version_out, crate::convert::version(req.version).as_u32()),
-                    _ => return Err(Trap::new("Invalid response handle")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
                 }
                 Ok(FastlyStatus::OK.code)
             },
@@ -584,15 +584,12 @@ impl Handler {
                 match clone.inner.borrow_mut().responses.get_mut(whandle as usize) {
                     Some(response) => {
                         response.status = hyper::http::StatusCode::from_u16(status as u16)
-                            .map_err(|e| {
+                            .map_err(|_| {
                                 debug!("invalid http status");
-                                wasmtime::Trap::new(e.to_string())
+                                Trap::i32_exit(FastlyStatus::HTTPPARSE.code)
                             })?;
                     }
-                    _ => {
-                        debug!("invalid response handle");
-                        return Err(wasmtime::Trap::new("invalid response handle"));
-                    }
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code))
                 }
 
                 Ok(FastlyStatus::OK.code)
@@ -671,7 +668,7 @@ impl Handler {
                             },
                         );
                     }
-                    _ => return Err(Trap::new("Invalid response handler")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
 
                 Ok(FastlyStatus::OK.code)
@@ -711,7 +708,7 @@ impl Handler {
                         };
                         resp.headers.append(name, value);
                     }
-                    _ => return Err(Trap::new("Invalid response handler")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
 
                 Ok(FastlyStatus::OK.code)
@@ -733,7 +730,7 @@ impl Handler {
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
                     Some(resp) => memory!(caller).write_i32(status, resp.status.as_u16() as i32),
-                    _ => return Err(Trap::new("Invalid response handle")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
                 Ok(FastlyStatus::OK.code)
             },
@@ -755,7 +752,7 @@ impl Handler {
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
                     Some(resp) => memory!(caller)
                         .write_u32(version_out, crate::convert::version(resp.version).as_u32()),
-                    _ => return Err(Trap::new("Invalid response handle")),
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
 
                 Ok(FastlyStatus::OK.code)
