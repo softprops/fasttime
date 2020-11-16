@@ -6,7 +6,7 @@ use fastly_shared::FastlyStatus;
 use http::{request::Parts as RequestParts, response::Parts as ResponseParts};
 use hyper::{Body, Request, Response};
 use log::debug;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, net::IpAddr, rc::Rc};
 use wasmtime::{Caller, Extern, Func, Linker, Module, Store, Trap};
 use wasmtime_wasi::{Wasi, WasiCtxBuilder};
 
@@ -74,9 +74,10 @@ impl Handler {
         store: Store,
         backends: Box<dyn crate::Backends>,
         dicionaries: HashMap<String, HashMap<String, String>>,
+        ip: IpAddr,
     ) -> Result<Response<Body>, BoxError> {
         if let Some(func) = self
-            .linker(store, backends, dicionaries)?
+            .linker(store, backends, dicionaries, ip)?
             .instantiate(&module)?
             .get_func("_start")
         {
@@ -185,6 +186,30 @@ impl Handler {
                 let mut mem = memory!(caller);
                 mem.write_i32(request_handle_out, index as i32);
                 mem.write_i32(body_handle_out, index as i32);
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+
+    fn fastly_http_req_downstream_client_ip_addr(
+        &self,
+        store: &Store,
+        ip: IpAddr,
+    ) -> Func {
+        Func::wrap(
+            &store,
+            move |caller: Caller<'_>, addr: i32, num_written: i32| {
+                let mut memory = memory!(caller);
+                debug!("fastly_http_req::downstream_client_ip_addr addr={} num_written={}", addr, num_written);
+                debug!("fastly_http_req::downstream_client_ip_addr => {}", ip.to_string());
+                let bytes = match ip {
+                    IpAddr::V4(ip) => ip.octets().to_vec(),
+                    IpAddr::V6(ip) => ip.octets().to_vec(),
+                };
+                match memory.write(addr, &bytes) {
+                    Ok(written) => memory.write_i32(num_written, written as i32),
+                    _ => return Err(Trap::new("failed to write ip address")),
+                }
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -850,6 +875,7 @@ impl Handler {
         store: Store,
         backends: Box<dyn crate::Backends>,
         dictionaries: HashMap<String, HashMap<String, String>>,
+        ip: IpAddr,
     ) -> Result<Linker, BoxError> {
         let wasi = Wasi::new(
             &store,
@@ -944,10 +970,10 @@ impl Handler {
                 "body_downstream_get",
                 self.body_downstream_get(&store),
             )?
-            .func(
+            .define(
                 "fastly_http_req",
                 "downstream_client_ip_addr",
-                self.none("fastly_http_req::downstream_client_ip_addr"),
+                self.fastly_http_req_downstream_client_ip_addr(&store, ip)
             )?
             .define("fastly_http_req", "new", self.fastly_http_req_new(&store))?
             .define(
@@ -1171,6 +1197,7 @@ mod tests {
             Store::new(&engine),
             crate::backend::default(),
             HashMap::default(),
+            "127.0.0.1".parse()?,
         )?;
         println!("{:?}", response.status());
         let bytes = hyper::body::to_bytes(response.into_body()).await?;

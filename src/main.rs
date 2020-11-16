@@ -115,11 +115,11 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     let state = (module, engine, backend.clone(), dictionary.clone());
     let server = Server::try_bind(&addr)?.serve(make_service_fn(move |conn: &AddrStream| {
         let state = state.clone();
-        let client_addr = conn.remote_addr();
+        let client_ip = conn.remote_addr().ip();
         async move {
             Ok::<_, anyhow::Error>(service_fn(move |mut req| {
                 let (module, engine, backend, dictionary) = state.clone();
-                req.extensions_mut().insert(ClientIp(client_addr.ip()));
+                req.extensions_mut().insert(ClientIp(client_ip.clone()));
                 async move {
                     Ok::<Response<hyper::Body>, anyhow::Error>(
                         spawn_blocking(move || {
@@ -133,6 +133,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                         Box::new(backend::Proxy::new(backend.into_iter().collect()))
                                     },
                                     dictionary.into_iter().collect(),
+                                    client_ip,
                                 )
                                 .map_err(|e| {
                                     log::debug!("Handler::run error: {}", e);
