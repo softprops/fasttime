@@ -92,6 +92,6 @@ impl Backend for GatewayError {
     }
 }
 
-pub fn default() -> impl Backend {
-    GatewayError
+pub fn default() -> Box<dyn Backend + 'static> {
+    Box::new(GatewayError)
 }

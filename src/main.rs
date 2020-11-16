@@ -82,7 +82,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                     &module,
                                     Store::new(&engine),
                                     backend.map_or_else::<Box<dyn backend::Backend>, _, _>(
-                                        || Box::new(backend::default()),
+                                        backend::default,
                                         |host| Box::new(backend::Proxy::new(host)),
                                     ),
                                 )
