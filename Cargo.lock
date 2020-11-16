@@ -674,12 +674,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "futures-io"
-version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "611834ce18aaa1bd13c4b374f5d653e1027cf99b6b502584ff8c9a64413b30bb"
-
-[[package]]
 name = "futures-macro"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -713,10 +707,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d304cff4a7b99cfb7986f7d43fbe93d175e72e704a8860787cc95e9ffd85cbd2"
 dependencies = [
  "futures-core",
- "futures-io",
  "futures-macro",
  "futures-task",
- "memchr",
  "pin-project 1.0.1",
  "pin-utils",
  "proc-macro-hack",
