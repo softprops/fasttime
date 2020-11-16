@@ -24,10 +24,17 @@ struct Opts {
     /// Port to listen on (defaults to 3000)
     #[structopt(long, short, default_value = "3000")]
     port: u16,
+    /// Backend to proxy
+    #[structopt(long, short)]
+    backend: Option<String>,
 }
 
 async fn run(opts: Opts) -> Result<(), BoxError> {
-    let Opts { wasm, port } = opts;
+    let Opts {
+        wasm,
+        port,
+        backend,
+    } = opts;
     let engine = Engine::default();
 
     // Loading a module significant amount of time depending on the size
@@ -41,12 +48,12 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     );
 
     let addr = ([127, 0, 0, 1], port).into();
-    let state = (module, engine);
+    let state = (module, engine, backend);
     let server = Server::bind(&addr).serve(make_service_fn(move |_| {
         let state = state.clone();
         async move {
             Ok::<_, anyhow::Error>(service_fn(move |mut req| {
-                let (module, engine) = state.clone();
+                let (module, engine, backend) = state.clone();
                 async move {
                     // re-writing uri to a host and authority. fastly requests validate these are present before sending them upstream
                     *req.uri_mut() = format!(
@@ -59,13 +66,25 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                     )
                     .parse()
                     .unwrap();
-                    Ok::<_, anyhow::Error>(
-                        Handler::new(req)
-                            .run(&module, Store::new(&engine), backend::default())
-                            .map_err(|e| {
-                                log::debug!("handler::run error: {}", e);
-                                anyhow!(e.to_string())
-                            })?,
+                    Ok::<hyper::Response<hyper::Body>, anyhow::Error>(
+                        tokio::task::spawn_blocking(move || {
+                            Handler::new(req)
+                                .run(
+                                    &module,
+                                    Store::new(&engine),
+                                    backend.map_or_else::<Box<dyn backend::Backend>, _, _>(
+                                        || Box::new(backend::default()),
+                                        |s| Box::new(backend::Proxy::new(s)),
+                                    ),
+                                )
+                                .map_err(|e| {
+                                    log::debug!("handler::run error: {}", e);
+                                    anyhow!(e.to_string())
+                                })
+                        })
+                        .await
+                        .unwrap()
+                        .unwrap(),
                     )
                 }
             }))
