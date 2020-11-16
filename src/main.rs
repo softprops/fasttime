@@ -47,7 +47,7 @@ fn rewrite_uri(req: Request<hyper::Body>) -> Result<Request<hyper::Body>, BoxErr
         .and_then(|s| match s.parse::<Authority>() {
             Ok(a) => Some(a),
             Err(e) => {
-                debug!("Failed to parse host header as authority: {}", e);
+                log::debug!("Failed to parse host header as authority: {}", e);
                 None
             }
         });
