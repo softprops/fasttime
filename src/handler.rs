@@ -1072,3 +1072,33 @@ impl Handler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::Request;
+    use std::path::Path;
+
+    #[tokio::test]
+    async fn it_works() -> Result<(), BoxError> {
+        if !Path::new("./tests/app/bin/main.wasm").exists() {
+            return Ok(());
+        }
+        // todo create one eng/module for all tests
+        let engine = Engine::default();
+        let module = Module::from_file(&engine, "./tests/app/bin/main.wasm")?;
+
+        let response = Handler::new(Request::default()).run(
+            &module,
+            Store::new(&engine),
+            Box::new(backend::default()),
+        )?;
+        println!("{:?}", response.status());
+        let bytes = hyper::body::to_bytes(response.into_body()).await?;
+        assert_eq!(
+            "Welcome to Fastly Compute@Edge!",
+            std::str::from_utf8(&bytes)?
+        );
+        Ok(())
+    }
+}
