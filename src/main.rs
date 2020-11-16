@@ -14,8 +14,10 @@ use backend::Backend;
 use http::{
     header::HOST,
     uri::{Authority, Scheme, Uri},
+    Response,
 };
 mod convert;
+use tokio::task::spawn_blocking;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
@@ -69,8 +71,8 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                         .and_then(|s| s.parse::<Authority>().ok());
                     *req.uri_mut() = Uri::from_parts(uri)?;
 
-                    Ok::<hyper::Response<hyper::Body>, anyhow::Error>(
-                        tokio::task::spawn_blocking(move || {
+                    Ok::<Response<hyper::Body>, anyhow::Error>(
+                        spawn_blocking(move || {
                             Handler::new(req)
                                 .run(
                                     &module,
@@ -85,9 +87,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                     anyhow!(e.to_string())
                                 })
                         })
-                        .await
-                        .unwrap()
-                        .unwrap(),
+                        .await??,
                     )
                 }
             }))
