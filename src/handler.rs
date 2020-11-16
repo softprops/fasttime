@@ -340,7 +340,7 @@ impl Handler {
         &self,
         store: &Store,
     ) -> Func {
-        Func::wrap(store, move |_: Caller<'_>, tag: i32, ttl: i32, swr: i32| {
+        Func::wrap(store, move |tag: i32, ttl: i32, swr: i32| {
             debug!(
                 "fastly_http_req::cache_override_set tag={} ttl={} swr={}",
                 tag, ttl, swr
@@ -575,7 +575,7 @@ impl Handler {
         let clone = self.clone();
         Func::wrap(
             store,
-            move |_: Caller<'_>, whandle: ResponseHandle, status: i32| {
+            move |whandle: ResponseHandle, status: i32| {
                 debug!(
                     "fastly_http_resp::status_set whandle={} status={}",
                     whandle, status
@@ -766,7 +766,7 @@ impl Handler {
     ) -> Func {
         Func::wrap(
             store,
-            move |_: Caller<'_>, whandle: ResponseHandle, version: i32| {
+            move |whandle: ResponseHandle, version: i32| {
                 debug!(
                     "fastly_http_resp::version_set handle={} version={}",
                     whandle, version
@@ -878,7 +878,7 @@ impl Handler {
             .func(
                 "fastly_http_req",
                 "version_set",
-                move |_: Caller<'_>, handle: RequestHandle, version_out: i32| {
+                move |handle: RequestHandle, version_out: i32| {
                     debug!(
                         "fastly_http_req::version_set handle={} version_out={}",
                         handle, version_out
