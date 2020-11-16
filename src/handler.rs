@@ -113,8 +113,8 @@ impl Handler {
                 clone.inner.borrow_mut().bodies.push(body);
 
                 let mut mem = memory!(caller);
-                mem.write_i32(request_handle_out as usize, index as i32);
-                mem.write_i32(body_handle_out as usize, index as i32);
+                mem.write_i32(request_handle_out, index as i32);
+                mem.write_i32(body_handle_out, index as i32);
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -129,7 +129,7 @@ impl Handler {
             debug!("fastly_http_req::new request={}", request);
             let index = clone.inner.borrow().requests.len();
             clone.inner.borrow_mut().requests.push(Request::default());
-            memory!(caller).write_i32(request as usize, index as i32);
+            memory!(caller).write_i32(request, index as i32);
             Ok(FastlyStatus::OK.code)
         })
     }
@@ -187,15 +187,13 @@ impl Handler {
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => {
                         debug!("fastly_http_req::method_get => {}", req.method());
-                        let written = match mem
-                            .write(addr as usize, req.method().as_ref().as_bytes())
-                        {
+                        let written = match mem.write(addr, req.method().as_ref().as_bytes()) {
                             Ok(num) => num,
                             _ => {
                                 return Err(Trap::new("Failed to write request HTTP method bytes"))
                             }
                         };
-                        mem.write_u32(nwritten_out as usize, written as u32);
+                        mem.write_u32(nwritten_out, written as u32);
                     }
                     _ => return Err(Trap::new("Invalid body handle")),
                 };
@@ -213,7 +211,7 @@ impl Handler {
         Func::wrap(
             store,
             move |caller: Caller<'_>, handle: RequestHandle, addr: i32, size: i32| {
-                let (_, buf) = match memory!(caller).read(addr as usize, size as usize) {
+                let (_, buf) = match memory!(caller).read(addr, size) {
                     Ok(result) => result,
                     _ => return Err(Trap::new("failed to read body memory")),
                 };
@@ -253,11 +251,11 @@ impl Handler {
                     Some(request) => {
                         let uri = request.uri().to_string();
                         debug!("fastly_http_req::uri_get => {}", uri);
-                        let written = match mem.write(addr as usize, uri.as_bytes()) {
+                        let written = match mem.write(addr, uri.as_bytes()) {
                             Ok(num) => num,
                             _ => return Err(Trap::new("failed to write method bytes")),
                         };
-                        mem.write_u32(nwritten_out as usize, written as u32);
+                        mem.write_u32(nwritten_out, written as u32);
                     }
                     _ => return Err(Trap::new("invalid request handle")),
                 }
@@ -284,7 +282,7 @@ impl Handler {
                   resp_body_handle_out: BodyHandle| {
                 debug!("fastly_http_req::send req_handle={}, body_handle={} backend_addr={} backend_len={} resp_handle_out={} resp_body_handle_out={}", req_handle, body_handle, backend_addr, backend_len, resp_handle_out, resp_body_handle_out);
                 let mut memory = memory!(caller);
-                let (_, buf) = match memory.read(backend_addr as usize, backend_len as usize) {
+                let (_, buf) = match memory.read(backend_addr, backend_len) {
                     Ok(result) => result,
                     _ => return Err(Trap::new("error reading backend name")),
                 };
@@ -309,11 +307,11 @@ impl Handler {
                 clone.inner.borrow_mut().bodies.push(body);
 
                 memory.write_i32(
-                    resp_handle_out as usize,
+                    resp_handle_out,
                     (clone.inner.borrow().responses.len() - 1) as i32,
                 );
                 memory.write_i32(
-                    resp_body_handle_out as usize,
+                    resp_body_handle_out,
                     (clone.inner.borrow().bodies.len() - 1) as i32,
                 );
 
@@ -336,7 +334,7 @@ impl Handler {
                 );
                 match clone.inner.borrow_mut().requests.get_mut(rhandle as usize) {
                     Some(req) => {
-                        let (_, buf) = match memory!(caller).read(addr as usize, size as usize) {
+                        let (_, buf) = match memory!(caller).read(addr, size) {
                             Ok(result) => result,
                             _ => return Err(Trap::new("failed to read request uri")),
                         };
@@ -414,8 +412,8 @@ impl Handler {
                         let mut memory = memory!(caller);
                         let ucursor = cursor as usize;
                         if ucursor >= names.len() {
-                            memory.write_i32(nwritten_out as usize, 0);
-                            memory.write_i32(ending_cursor_out as usize, -1);
+                            memory.write_i32(nwritten_out, 0);
+                            memory.write_i32(ending_cursor_out, -1);
                             return Ok(FastlyStatus::OK.code);
                         }
                         debug!(
@@ -425,10 +423,10 @@ impl Handler {
                         );
                         let mut bytes = names.get(ucursor).unwrap().as_bytes().to_vec();
                         bytes.push(0); // api requires a terminating \x00 byte
-                        let written = memory.write(addr as usize, &bytes).unwrap();
-                        memory.write_i32(nwritten_out as usize, written as i32);
+                        let written = memory.write(addr, &bytes).unwrap();
+                        memory.write_i32(nwritten_out, written as i32);
                         memory.write_i32(
-                            ending_cursor_out as usize,
+                            ending_cursor_out,
                             if ucursor < names.len() - 1 {
                                 cursor + 1 as i32
                             } else {
@@ -464,8 +462,7 @@ impl Handler {
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => {
                         let mut memory = memory!(caller);
-                        let (_, header) = match memory.read(name_addr as usize, name_size as usize)
-                        {
+                        let (_, header) = match memory.read(name_addr, name_size) {
                             Ok(result) => result,
                             _ => return Err(Trap::new("Failed to read header name")),
                         };
@@ -481,16 +478,16 @@ impl Handler {
                         let mut memory = memory!(caller);
                         let ucursor = cursor as usize;
                         if ucursor >= values.len() {
-                            memory.write_i32(nwritten_out as usize, 0);
-                            memory.write_i32(ending_cursor_out as usize, -1);
+                            memory.write_i32(nwritten_out, 0);
+                            memory.write_i32(ending_cursor_out, -1);
                             return Ok(FastlyStatus::OK.code);
                         }
                         let mut bytes = values.get(ucursor).unwrap().to_vec();
                         bytes.push(0); // api requires a terminating \x00 byte
-                        let written = memory.write(addr as usize, &bytes).unwrap();
-                        memory.write_i32(nwritten_out as usize, written as i32);
+                        let written = memory.write(addr, &bytes).unwrap();
+                        memory.write_i32(nwritten_out, written as i32);
                         memory.write_i32(
-                            ending_cursor_out as usize,
+                            ending_cursor_out,
                             if ucursor < values.len() - 1 {
                                 cursor + 1 as i32
                             } else {
@@ -519,10 +516,8 @@ impl Handler {
                     handle, version_out
                 );
                 match clone.inner.borrow().requests.get(handle as usize) {
-                    Some(req) => memory!(caller).write_u32(
-                        version_out as usize,
-                        crate::http::version(req.version()).as_u32(),
-                    ),
+                    Some(req) => memory!(caller)
+                        .write_u32(version_out, crate::http::version(req.version()).as_u32()),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
                 Ok(FastlyStatus::OK.code)
@@ -541,7 +536,7 @@ impl Handler {
             debug!("fastly_http_body::new handle_out={}", handle_out);
             let index = clone.inner.borrow().bodies.len();
             clone.inner.borrow_mut().bodies.push(Body::default());
-            memory!(caller).write_u32(handle_out as usize, index as u32);
+            memory!(caller).write_u32(handle_out, index as u32);
 
             Ok(FastlyStatus::OK.code)
         })
@@ -567,13 +562,13 @@ impl Handler {
                 match clone.inner.borrow_mut().bodies.get_mut(handle as usize) {
                     Some(body) => {
                         let mut mem = memory!(caller);
-                        let (read, buf) = match mem.read(addr as usize, size as usize) {
+                        let (read, buf) = match mem.read(addr, size) {
                             Ok((num, buf)) => (num, buf),
                             _ => return Err(Trap::new("Failed to read body memory")),
                         };
                         *body = Body::from(buf);
 
-                        mem.write_u32(nwritten_out as usize, read as u32);
+                        mem.write_u32(nwritten_out, read as u32);
                     }
                     _ => return Err(Trap::new("Failed to body handle")),
                 }
@@ -626,7 +621,7 @@ impl Handler {
             debug!("fastly_http_resp::new handle_out={}", handle_out);
             let index = clone.inner.borrow().responses.len();
             clone.inner.borrow_mut().responses.push(Response::default());
-            memory!(caller).write_u32(handle_out as usize, index as u32);
+            memory!(caller).write_u32(handle_out, index as u32);
 
             Ok(FastlyStatus::OK.code)
         })
@@ -653,7 +648,7 @@ impl Handler {
                 let mut memory = memory!(caller);
                 match clone.inner.borrow_mut().responses.get_mut(handle as usize) {
                     Some(resp) => {
-                        let name = match memory.read(name_addr as usize, name_size as usize) {
+                        let name = match memory.read(name_addr, name_size) {
                             Ok((_, bytes)) => {
                                 hyper::header::HeaderName::from_bytes(&bytes).unwrap()
                             }
@@ -670,16 +665,16 @@ impl Handler {
 
                         let ucursor = cursor as usize;
                         if ucursor >= values.len() {
-                            memory.write_i32(nwritten_out as usize, 0);
-                            memory.write_i32(ending_cursor_out as usize, -1);
+                            memory.write_i32(nwritten_out, 0);
+                            memory.write_i32(ending_cursor_out, -1);
                             return Ok(FastlyStatus::OK.code);
                         }
                         let mut bytes = values.get(ucursor).unwrap().to_vec();
                         bytes.push(0); // api requires a terminating \x00 byte
-                        let written = memory.write(addr as usize, &bytes).unwrap();
-                        memory.write_i32(nwritten_out as usize, written as i32);
+                        let written = memory.write(addr, &bytes).unwrap();
+                        memory.write_i32(nwritten_out, written as i32);
                         memory.write_i32(
-                            ending_cursor_out as usize,
+                            ending_cursor_out,
                             if ucursor < values.len() - 1 {
                                 cursor + 1 as i32
                             } else {
@@ -712,14 +707,14 @@ impl Handler {
                 let mut memory = memory!(caller);
                 match clone.inner.borrow_mut().responses.get_mut(handle as usize) {
                     Some(resp) => {
-                        let name = match memory.read(name_addr as usize, name_size as usize) {
+                        let name = match memory.read(name_addr, name_size) {
                             Ok((_, bytes)) => {
                                 hyper::header::HeaderName::from_bytes(&bytes).unwrap()
                             }
                             _ => return Err(Trap::new("Failed to read header name")),
                         };
 
-                        let value = match memory.read(values_addr as usize, values_size as usize) {
+                        let value = match memory.read(values_addr, values_size) {
                             Ok((_, bytes)) => {
                                 hyper::header::HeaderValue::from_bytes(&bytes).unwrap()
                             }
@@ -748,9 +743,7 @@ impl Handler {
                     resp_handle, status
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
-                    Some(resp) => {
-                        memory!(caller).write_i32(status as usize, resp.status().as_u16() as i32)
-                    }
+                    Some(resp) => memory!(caller).write_i32(status, resp.status().as_u16() as i32),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
                 Ok(FastlyStatus::OK.code)
@@ -771,10 +764,8 @@ impl Handler {
                     resp_handle, version_out
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
-                    Some(resp) => memory!(caller).write_u32(
-                        version_out as usize,
-                        crate::http::version(resp.version()).as_u32(),
-                    ),
+                    Some(resp) => memory!(caller)
+                        .write_u32(version_out, crate::http::version(resp.version()).as_u32()),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
 

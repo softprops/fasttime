@@ -123,7 +123,7 @@ mod tests {
         let response = Handler::new(Request::default()).run(
             &module,
             Store::new(&engine),
-            backend::default(),
+            Box::new(backend::default()),
         )?;
         println!("{:?}", response.status());
         let bytes = hyper::body::to_bytes(response.into_body()).await?;
