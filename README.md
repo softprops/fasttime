@@ -31,10 +31,23 @@ To start fasttime, just provide it with the path to your Fastly Compute@Edge `.w
 $ fasttime -w path/to/main.wasm
 ```
 
-This starts up a localhost HTTP server listening on port `3000`
+This starts up a localhost HTTP server listening on port `3000` which you can interact with with
+an HTTP client like `curl`
 
 ```sh
 curl -i "http://localhost:3000"
+```
+
+### backends
+
+A common usecase for Fastly is proxying a set backend hosts referred to by name. `fasttime` supports
+providing multiple `-b | --backend` flags with values of the form `{backend}:{host}`. By default if you
+send a request to a backend that you have not mapped, a bad gateway response will be returned by the server.
+
+```sh
+$ fasttime -w path/to/main.wasm \
+    -b backend-two:localhost:3001 \
+    -b backend-two:you.com
 ```
 
 ### debugging
