@@ -20,7 +20,7 @@ mod convert;
 use colored::Colorize;
 use hyper::server::conn::AddrStream;
 use std::{
-    collections::HashMap, error::Error as StdError, net::IpAddr, process::exit, str::FromStr,
+    collections::HashMap, error::Error as StdError, process::exit, str::FromStr,
 };
 use tokio::task::spawn_blocking;
 
@@ -51,8 +51,6 @@ fn parse_dictionary(s: &str) -> Result<(String, HashMap<String, String>), Box<dy
         });
     Ok((name, dict?))
 }
-
-struct ClientIp(IpAddr);
 
 /// ⏱️  A local Fastly Compute@Edge runtime emulator
 #[derive(Debug, StructOpt)]
@@ -117,9 +115,8 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         let state = state.clone();
         let client_ip = conn.remote_addr().ip();
         async move {
-            Ok::<_, anyhow::Error>(service_fn(move |mut req| {
+            Ok::<_, anyhow::Error>(service_fn(move |req| {
                 let (module, engine, backend, dictionary) = state.clone();
-                req.extensions_mut().insert(ClientIp(client_ip.clone()));
                 async move {
                     Ok::<Response<hyper::Body>, anyhow::Error>(
                         spawn_blocking(move || {
