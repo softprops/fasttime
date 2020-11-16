@@ -3,6 +3,7 @@ use crate::{
     BoxError,
 };
 use fastly_shared::FastlyStatus;
+use http::{request::Parts as RequestParts, response::Parts as ResponseParts};
 use hyper::{Body, Request, Response};
 use log::debug;
 use std::{cell::RefCell, rc::Rc};
@@ -23,9 +24,9 @@ struct Inner {
     /// downstream request
     request: Option<Request<Body>>,
     /// requests initiated within the handler
-    requests: Vec<Request<Body>>,
+    requests: Vec<RequestParts>,
     /// responses from the requests initiated within the handler
-    responses: Vec<Response<Body>>,
+    responses: Vec<ResponseParts>,
     /// bodies created within the handler
     bodies: Vec<Body>,
     /// final handler response
@@ -105,11 +106,7 @@ impl Handler {
                     .unwrap()
                     .into_parts();
                 debug!("fastly_http_req::body_downstream_get {:?}", parts);
-                clone
-                    .inner
-                    .borrow_mut()
-                    .requests
-                    .push(Request::from_parts(parts, Body::default()));
+                clone.inner.borrow_mut().requests.push(parts);
                 clone.inner.borrow_mut().bodies.push(body);
 
                 let mut mem = memory!(caller);
@@ -128,7 +125,8 @@ impl Handler {
         Func::wrap(store, move |caller: Caller<'_>, request: RequestHandle| {
             debug!("fastly_http_req::new request={}", request);
             let index = clone.inner.borrow().requests.len();
-            clone.inner.borrow_mut().requests.push(Request::default());
+            let r: Request<Body> = Request::default();
+            clone.inner.borrow_mut().requests.push(r.into_parts().0);
             memory!(caller).write_i32(request, index as i32);
             Ok(FastlyStatus::OK.code)
         })
@@ -153,12 +151,7 @@ impl Handler {
                     debug!("resp_send_downstream: streaming unsupported");
                     return FastlyStatus::UNSUPPORTED.code;
                 }
-                let (parts, _) = clone
-                    .inner
-                    .borrow_mut()
-                    .responses
-                    .remove(whandle as usize)
-                    .into_parts();
+                let parts = clone.inner.borrow_mut().responses.remove(whandle as usize);
                 let body = clone.inner.borrow_mut().bodies.remove(bhandle as usize);
                 clone.inner.borrow_mut().response = hyper::Response::from_parts(parts, body);
 
@@ -186,8 +179,8 @@ impl Handler {
                 let mut mem = memory!(caller);
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => {
-                        debug!("fastly_http_req::method_get => {}", req.method());
-                        let written = match mem.write(addr, req.method().as_ref().as_bytes()) {
+                        debug!("fastly_http_req::method_get => {}", req.method);
+                        let written = match mem.write(addr, req.method.as_ref().as_bytes()) {
                             Ok(num) => num,
                             _ => {
                                 return Err(Trap::new("Failed to write request HTTP method bytes"))
@@ -218,7 +211,7 @@ impl Handler {
                 match hyper::Method::from_bytes(&buf) {
                     Ok(method) => {
                         match clone.inner.borrow_mut().requests.get_mut(handle as usize) {
-                            Some(req) => *req.method_mut() = method,
+                            Some(req) => req.method = method,
                             _ => return Err(Trap::new("invalid request handler")),
                         }
                     }
@@ -249,7 +242,7 @@ impl Handler {
                 let mut mem = memory!(caller);
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(request) => {
-                        let uri = request.uri().to_string();
+                        let uri = request.uri.to_string();
                         debug!("fastly_http_req::uri_get => {}", uri);
                         let written = match mem.write(addr, uri.as_bytes()) {
                             Ok(num) => num,
@@ -289,21 +282,16 @@ impl Handler {
                 let backend = std::str::from_utf8(&buf).unwrap();
                 debug!("backend={}", backend);
 
-                let (parts, _) = clone
+                let parts = clone
                     .inner
                     .borrow_mut()
                     .requests
-                    .remove(req_handle as usize)
-                    .into_parts();
+                    .remove(req_handle as usize);
                 let body = clone.inner.borrow_mut().bodies.remove(body_handle as usize);
                 let req = Request::from_parts(parts, body);
                 let (parts, body) = backends.send(backend, req).unwrap().into_parts();
 
-                clone
-                    .inner
-                    .borrow_mut()
-                    .responses
-                    .push(Response::from_parts(parts, Body::default()));
+                clone.inner.borrow_mut().responses.push(parts);
                 clone.inner.borrow_mut().bodies.push(body);
 
                 memory.write_i32(
@@ -338,7 +326,7 @@ impl Handler {
                             Ok(result) => result,
                             _ => return Err(Trap::new("failed to read request uri")),
                         };
-                        *req.uri_mut() = hyper::Uri::from_maybe_shared(buf)
+                        req.uri = hyper::Uri::from_maybe_shared(buf)
                             .map_err(|_| Trap::new("invalid uri"))?;
                     }
                     _ => return Err(Trap::new("invalid request handle")),
@@ -407,7 +395,7 @@ impl Handler {
                 debug!("fastly_http_req::header_names_get");
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => {
-                        let mut names: Vec<_> = req.headers().keys().map(|h| h.as_str()).collect();
+                        let mut names: Vec<_> = req.headers.keys().map(|h| h.as_str()).collect();
                         names.sort();
                         let mut memory = memory!(caller);
                         let ucursor = cursor as usize;
@@ -469,7 +457,7 @@ impl Handler {
                         let name = std::str::from_utf8(&header).unwrap();
                         debug!("fastly_http_req::header_values_get {} ({})", name, cursor);
                         let mut values: Vec<_> = req
-                            .headers()
+                            .headers
                             .get_all(name)
                             .into_iter()
                             .map(|h| h.as_ref())
@@ -517,7 +505,7 @@ impl Handler {
                 );
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => memory!(caller)
-                        .write_u32(version_out, crate::http::version(req.version()).as_u32()),
+                        .write_u32(version_out, crate::http::version(req.version).as_u32()),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
                 Ok(FastlyStatus::OK.code)
@@ -595,11 +583,11 @@ impl Handler {
 
                 match clone.inner.borrow_mut().responses.get_mut(whandle as usize) {
                     Some(response) => {
-                        *response.status_mut() = hyper::http::StatusCode::from_u16(status as u16)
+                        response.status = hyper::http::StatusCode::from_u16(status as u16)
                             .map_err(|e| {
-                            debug!("invalid http status");
-                            wasmtime::Trap::new(e.to_string())
-                        })?;
+                                debug!("invalid http status");
+                                wasmtime::Trap::new(e.to_string())
+                            })?;
                     }
                     _ => {
                         debug!("invalid response handle");
@@ -620,7 +608,8 @@ impl Handler {
         Func::wrap(store, move |caller: Caller<'_>, handle_out: i32| {
             debug!("fastly_http_resp::new handle_out={}", handle_out);
             let index = clone.inner.borrow().responses.len();
-            clone.inner.borrow_mut().responses.push(Response::default());
+            let resp: Response<Body> = Response::default();
+            clone.inner.borrow_mut().responses.push(resp.into_parts().0);
             memory!(caller).write_u32(handle_out, index as u32);
 
             Ok(FastlyStatus::OK.code)
@@ -656,7 +645,7 @@ impl Handler {
                         };
 
                         let mut values: Vec<_> = resp
-                            .headers()
+                            .headers
                             .get_all(name)
                             .into_iter()
                             .map(|e| e.as_ref())
@@ -720,7 +709,7 @@ impl Handler {
                             }
                             _ => return Err(Trap::new("Failed to read header name")),
                         };
-                        resp.headers_mut().append(name, value);
+                        resp.headers.append(name, value);
                     }
                     _ => return Err(Trap::new("Invalid response handler")),
                 }
@@ -743,7 +732,7 @@ impl Handler {
                     resp_handle, status
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
-                    Some(resp) => memory!(caller).write_i32(status, resp.status().as_u16() as i32),
+                    Some(resp) => memory!(caller).write_i32(status, resp.status.as_u16() as i32),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
                 Ok(FastlyStatus::OK.code)
@@ -765,7 +754,7 @@ impl Handler {
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
                     Some(resp) => memory!(caller)
-                        .write_u32(version_out, crate::http::version(resp.version()).as_u32()),
+                        .write_u32(version_out, crate::http::version(resp.version).as_u32()),
                     _ => return Err(Trap::new("Invalid response handle")),
                 }
 
