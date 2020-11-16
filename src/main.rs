@@ -19,9 +19,7 @@ use http::{
 mod convert;
 use colored::Colorize;
 use hyper::server::conn::AddrStream;
-use std::{
-    collections::HashMap, error::Error as StdError, process::exit, str::FromStr,
-};
+use std::{collections::HashMap, error::Error as StdError, process::exit, str::FromStr};
 use tokio::task::spawn_blocking;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
