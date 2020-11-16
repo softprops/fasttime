@@ -125,7 +125,7 @@ impl Handler {
                   key_addr: i32,
                   key_len: i32,
                   value_addr: i32,
-                  value_max_len: i32,
+                  _value_max_len: i32,
                   nwritten: i32| {
                 debug!("fastly_dictionary::get");
                 match clone.inner.borrow().dictionaries.get(dict_handle as usize) {
@@ -1168,6 +1168,7 @@ mod tests {
             &module,
             Store::new(&engine),
             crate::backend::default(),
+            HashMap::default(),
         )?;
         println!("{:?}", response.status());
         let bytes = hyper::body::to_bytes(response.into_body()).await?;
