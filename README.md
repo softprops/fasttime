@@ -58,7 +58,7 @@ $ fasttime -w path/to/main.wasm \
 
 ### 📚 dictionaries
 
-A another common usecase for Fastly is looking up values in edge dictionaries. `fasttime` supports
+A common way to store lookup information in Fastly is to use [edge dictionaries](https://docs.fastly.com/en/guides/about-edge-dictionaries). `fasttime` supports
 providing multiple `-d | --dictionary` flags with values of the form `{dictionary}:{key}={value},{key2}={value2}`. 
 
 ```sh
