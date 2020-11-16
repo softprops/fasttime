@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-   A lightweight Fastly [Compute@Edge](https://www.fastly.com/products/edge-compute/serverless/) runtime for running wasm applications locally
+   A lightweight Fastly <a alt="GitHub Actions" href="https://www.fastly.com/products/edge-compute/serverless/">Compute@Edge</a> runtime for running wasm applications locally
 </p>
 
 <div align="center">
