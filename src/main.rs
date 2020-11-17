@@ -1,30 +1,33 @@
 mod backend;
-mod convert;
 mod geo;
+mod handler;
 mod memory;
 
 use anyhow::anyhow;
-use hyper::{
-    service::{make_service_fn, service_fn},
-    Server,
-};
-use std::{error::Error, path::PathBuf, time::SystemTime};
-use structopt::StructOpt;
-use wasmtime::{Engine, Module, Store};
-mod handler;
-
 use backend::Backends;
+use colored::Colorize;
 use handler::Handler;
 use http::{
     header::HOST,
     uri::{Authority, Scheme, Uri},
     Request, Response,
 };
-
-use colored::Colorize;
-use hyper::server::conn::AddrStream;
-use std::{collections::HashMap, error::Error as StdError, process::exit, str::FromStr};
+use hyper::{
+    server::conn::AddrStream,
+    service::{make_service_fn, service_fn},
+    Server,
+};
+use std::{
+    collections::HashMap,
+    error::{Error, Error as StdError},
+    path::PathBuf,
+    process::exit,
+    str::FromStr,
+    time::SystemTime,
+};
+use structopt::StructOpt;
 use tokio::task::spawn_blocking;
+use wasmtime::{Engine, Module, Store};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 

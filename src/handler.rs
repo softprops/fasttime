@@ -3,11 +3,11 @@ use crate::{
     memory::{ReadMem, WriteMem},
     BoxError,
 };
-use fastly_shared::FastlyStatus;
+use fastly_shared::{FastlyStatus, HttpVersion};
 use http::{request::Parts as RequestParts, response::Parts as ResponseParts};
-use hyper::{Body, Request, Response};
+use hyper::{http::StatusCode, Body, Request, Response};
 use log::debug;
-use std::{cell::RefCell, collections::HashMap, net::IpAddr, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, convert::TryFrom, net::IpAddr, rc::Rc};
 use wasmtime::{Caller, Extern, Func, Linker, Module, Store, Trap};
 use wasmtime_wasi::{Wasi, WasiCtxBuilder};
 
@@ -619,12 +619,35 @@ impl Handler {
                 );
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => memory!(caller)
-                        .write_u32(version_out, crate::convert::version(req.version).as_u32()),
+                        .write_u32(version_out, HttpVersion::from(req.version).as_u32()),
                     _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
                 Ok(FastlyStatus::OK.code)
             },
         )
+    }
+
+    fn fastly_http_req_version_set(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(&store, move |handle: RequestHandle, version: i32| {
+            debug!(
+                "fastly_http_req::version_set handle={} version={}",
+                handle, version
+            );
+            match clone.inner.borrow_mut().requests.get_mut(handle as usize) {
+                Some(req) => {
+                    req.version = HttpVersion::try_from(version as u32)
+                        .expect("invalid version")
+                        .into();
+                }
+                _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
+            }
+
+            Ok(FastlyStatus::OK.code)
+        })
     }
 
     // bodies
@@ -680,6 +703,50 @@ impl Handler {
         )
     }
 
+    fn fastly_http_body_read(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(
+            &store,
+            move |caller: Caller<'_>,
+                  body_handle: BodyHandle,
+                  buf: i32,
+                  buf_len: i32,
+                  nread_out: i32| {
+                debug!(
+                    "fastly_http_body::read body_handle={}, buf={} buf_len={} nread_out={}",
+                    body_handle, buf, buf_len, nread_out
+                );
+                match clone
+                    .inner
+                    .borrow_mut()
+                    .bodies
+                    .get_mut(body_handle as usize)
+                {
+                    Some(body) => {
+                        let mut memory = memory!(caller);
+                        match memory.write(
+                            buf,
+                            futures_executor::block_on(hyper::body::to_bytes(body))
+                                .unwrap()
+                                .as_ref(),
+                        ) {
+                            Ok(written) => {
+                                debug!("fastly_http_body::read write {} bytes", written);
+                                memory.write_i32(nread_out, written as i32);
+                            }
+                            _ => return Err(Trap::new("failed to read body bytes")),
+                        }
+                    }
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
+                }
+
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
     // responses
 
     fn fastly_http_resp_status_set(
@@ -695,11 +762,10 @@ impl Handler {
 
             match clone.inner.borrow_mut().responses.get_mut(whandle as usize) {
                 Some(response) => {
-                    response.status =
-                        hyper::http::StatusCode::from_u16(status as u16).map_err(|_| {
-                            debug!("invalid http status");
-                            Trap::i32_exit(FastlyStatus::HTTPPARSE.code)
-                        })?;
+                    response.status = StatusCode::from_u16(status as u16).map_err(|_| {
+                        debug!("invalid http status");
+                        Trap::i32_exit(FastlyStatus::HTTPPARSE.code)
+                    })?;
                 }
                 _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
             }
@@ -722,6 +788,59 @@ impl Handler {
 
             Ok(FastlyStatus::OK.code)
         })
+    }
+
+    fn fastly_http_resp_header_names_get(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(
+            &store,
+            move |caller: Caller<'_>,
+                  handle: ResponseHandle,
+                  addr: i32,
+                  maxlen: i32,
+                  cursor: i32,
+                  ending_cursor_out: i32,
+                  nwritten_out: i32| {
+                debug!("fastly_http_resp::header_names_get handle={} addr={} maxlen={} cursor={} ending_cursor_out={} nwritten_out={}",
+            handle, addr, maxlen, cursor, ending_cursor_out, nwritten_out);
+                match clone.inner.borrow().responses.get(handle as usize) {
+                    Some(resp) => {
+                        let mut names: Vec<_> = resp.headers.keys().map(|h| h.as_str()).collect();
+                        names.sort_unstable();
+                        let mut memory = memory!(caller);
+                        let ucursor = cursor as usize;
+                        if ucursor >= names.len() {
+                            memory.write_i32(nwritten_out, 0);
+                            memory.write_i32(ending_cursor_out, -1);
+                            return Ok(FastlyStatus::OK.code);
+                        }
+                        debug!(
+                            "fastly_http_req::header_names_get {:?} ({})",
+                            names.get(ucursor),
+                            ucursor
+                        );
+                        let mut bytes = names.get(ucursor).unwrap().as_bytes().to_vec();
+                        bytes.push(0); // api requires a terminating \x00 byte
+                        let written = memory.write(addr, &bytes).unwrap();
+                        memory.write_i32(nwritten_out, written as i32);
+                        memory.write_i32(
+                            ending_cursor_out,
+                            if ucursor < names.len() - 1 {
+                                cursor + 1 as i32
+                            } else {
+                                -1 as i32
+                            },
+                        );
+                    }
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
+                }
+
+                Ok(FastlyStatus::OK.code)
+            },
+        )
     }
 
     fn fastly_http_resp_header_values_get(
@@ -862,7 +981,7 @@ impl Handler {
                 );
                 match clone.inner.borrow().responses.get(resp_handle as usize) {
                     Some(resp) => memory!(caller)
-                        .write_u32(version_out, crate::convert::version(resp.version).as_u32()),
+                        .write_u32(version_out, HttpVersion::from(resp.version).as_u32()),
                     _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
 
@@ -875,11 +994,20 @@ impl Handler {
         &self,
         store: &Store,
     ) -> Func {
+        let clone = self.clone();
         Func::wrap(store, move |whandle: ResponseHandle, version: i32| {
             debug!(
                 "fastly_http_resp::version_set handle={} version={}",
                 whandle, version
             );
+            match clone.inner.borrow_mut().responses.get_mut(whandle as usize) {
+                Some(req) => {
+                    req.version = HttpVersion::try_from(version as u32)
+                        .expect("invalid version")
+                        .into();
+                }
+                _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
+            }
             Ok(FastlyStatus::OK.code)
         })
     }
@@ -997,18 +1125,10 @@ impl Handler {
                 "version_get",
                 self.fastly_http_req_version_get(&store)
             )?
-            .func(
+            .define(
                 "fastly_http_req",
                 "version_set",
-                move |handle: RequestHandle, version_out: i32| {
-                    debug!(
-                        "fastly_http_req::version_set handle={} version_out={}",
-                        handle, version_out
-                    );
-                    // noop
-
-                    FastlyStatus::OK.code
-                },
+                self.fastly_http_req_version_set(&store)
             )?
             .define(
                 "fastly_http_req",
@@ -1109,18 +1229,10 @@ impl Handler {
                 "version_set",
                 self.fastly_http_resp_version_set(&store),
             )?
-            .func(
+            .define(
                 "fastly_http_resp",
                 "header_names_get",
-                |_handle: i32,
-                 _addr: i32,
-                 _maxlen: i32,
-                 _cursor: i32,
-                 _ending_cursor_out: i32,
-                 _nwritten_out: i32| {
-                    debug!("fastly_http_resp::header_names_get");
-                    FastlyStatus::OK.code
-                },
+                self.fastly_http_resp_header_names_get(&store),
             )?
             .define(
                 "fastly_http_resp",
@@ -1147,10 +1259,11 @@ impl Handler {
                 "write",
                 self.fastly_http_body_write(&store),
             )?
-            .func("fastly_http_body", "read", || {
-                debug!("fastly_http_body::read");
-                FastlyStatus::OK.code
-            })?
+            .define(
+                "fastly_http_body",
+                "read",
+                self.fastly_http_body_read(&store),
+            )?
             .func("fastly_http_body", "append", || {
                 debug!("fastly_http_body::append");
                 FastlyStatus::OK.code
