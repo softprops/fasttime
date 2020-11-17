@@ -5,8 +5,8 @@ use serde::Serialize;
 #[derive(Serialize)]
 pub struct Geo {
     pub as_name: String,
-    pub as_number: usize,
-    pub area_code: String,
+    pub as_number: u32,
+    pub area_code: u16,
     pub city: String,
     pub conn_speed: String,
     pub conn_type: String,
@@ -17,6 +17,7 @@ pub struct Geo {
     pub longitude: f64,
     pub metro_code: usize,
     pub postal_code: String,
+    pub proxy_description: String,
     pub proxy_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
@@ -28,10 +29,10 @@ impl Default for Geo {
         Geo {
             as_name: "AS22252".into(),
             as_number: 22252,
-            area_code: "".into(),
+            area_code: 10026,
             city: "New York".into(),
-            conn_speed: "".into(),
-            conn_type: "".into(),
+            conn_speed: "satellite".into(),
+            conn_type: "satellite".into(),
             country_code: "US".into(),
             country_code3: "USA".into(),
             country_name: "United States".into(),
@@ -39,7 +40,8 @@ impl Default for Geo {
             longitude: -73.98590,
             metro_code: 0,
             postal_code: "11201".into(),
-            proxy_type: "".into(),
+            proxy_description: "cloud".into(),
+            proxy_type: "public".into(),
             region: None,
             utc_offset: -5,
         }
