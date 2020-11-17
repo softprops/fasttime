@@ -25,16 +25,29 @@ on your laptop ✨.
 
 ## 🤸 usage
 
-The fastest way to get started with [Compute@Edge](https://www.fastly.com/products/edge-compute/serverless/) is though [Fastly CLI](https://github.com/fastly/cli#installation)
+### Building your app
+
+The fastest way to get started with [Compute@Edge](https://www.fastly.com/products/edge-compute/serverless/) is though the [Fastly CLI](https://github.com/fastly/cli#installation)
 
 ```sh
 $ fastly compute build
 ```
 
-To start fasttime, just provide it with the path to your Fastly Compute@Edge `.wasm` build artifact.
+If you do not have Fastly CLI, you can also build with the standard cargo tooling. Fastly assumes a Rust toolchain version of `1.46.0`
 
 ```sh
-$ fasttime -w path/to/main.wasm
+# optionally install the wasm32 toolchain if you have not done so already
+$ rustup target add wasm32-wasi --toolchain 1.46.0
+# build a release mode .wasm executable
+$ cargo +1.46.0 build --release --target wasm32-wasi
+```
+
+To start fasttime, just provide it with the path to your Fastly Compute@Edge `.wasm` build artifact.
+
+### Serving up your app
+
+```sh
+$ fasttime -w target/wasm32-wasi/release/app.wasm
 ```
 
 This starts up a localhost HTTP server listening on port `3000` which you can interact with with
@@ -44,35 +57,35 @@ an HTTP client like `curl`
 curl -i "http://localhost:3000"
 ```
 
-### ↔️ backends
+#### ↔️ backends
 
 A common usecase for Fastly is proxying a set backend hosts referred to by name. `fasttime` supports
 providing multiple `-b | --backend` flags with values of the form `{backend}:{host}`. By default, if you
 send a request to a backend that you have not mapped, a bad gateway response will be returned by the server.
 
 ```sh
-$ fasttime -w path/to/main.wasm \
+$ fasttime -w target/wasm32-wasi/release/app.wasm \
     -b backend-two:localhost:3001 \
     -b backend-two:you.com
 ```
 
-### 📚 dictionaries
+#### 📚 dictionaries
 
 A common way to store lookup information in Fastly is to use [edge dictionaries](https://docs.fastly.com/en/guides/about-edge-dictionaries). `fasttime` supports
 providing multiple `-d | --dictionary` flags with values of the form `{dictionary}:{key}={value},{key2}={value2}`. 
 
 ```sh
-$ fasttime -w path/to/main.wasm \
+$ fasttime -w target/wasm32-wasi/release/app.wasm \
     -d dictionary-one:foo=bar \
-     -d dictionary-two:baz=boom
+    -d dictionary-two:baz=boom
 ```
 
-### 🔍 debugging
+#### 🔍 debugging
 
-Set the `RUST_LOG` env variable to `fastime=debug` and run as usual
+Set the `RUST_LOG` env variable to `fastime=debug` and run the cli as usual
 
 ```
-RUST_LOG=fasttime=debug fasttime -w path/to/main.wasm
+RUST_LOG=fasttime=debug fasttime -w target/wasm32-wasi/release/app.wasm
 ```
 
 ## 🚧 roadmap
