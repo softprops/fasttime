@@ -5,7 +5,11 @@ use crate::{
 };
 use fastly_shared::{FastlyStatus, HttpVersion};
 use http::{request::Parts as RequestParts, response::Parts as ResponseParts};
-use hyper::{http::StatusCode, Body, Request, Response};
+use hyper::{
+    header::{HeaderName, HeaderValue},
+    http::StatusCode,
+    Body, Request, Response,
+};
 use log::debug;
 use std::{cell::RefCell, collections::HashMap, convert::TryFrom, net::IpAddr, rc::Rc};
 use wasmtime::{Caller, Extern, Func, Linker, Module, Store, Trap};
@@ -509,7 +513,8 @@ impl Handler {
                 debug!("fastly_http_req::header_names_get");
                 match clone.inner.borrow().requests.get(handle as usize) {
                     Some(req) => {
-                        let mut names: Vec<_> = req.headers.keys().map(|h| h.as_str()).collect();
+                        let mut names: Vec<_> =
+                            req.headers.keys().map(HeaderName::as_str).collect();
                         names.sort_unstable();
                         let mut memory = memory!(caller);
                         let ucursor = cursor as usize;
@@ -538,7 +543,6 @@ impl Handler {
                     }
                     _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
-
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -561,7 +565,7 @@ impl Handler {
                   ending_cursor_out: i32,
                   nwritten_out: i32| {
                 debug!("fastly_http_req::header_values_get");
-                match clone.inner.borrow().requests.get(handle as usize) {
+                match clone.inner.borrow_mut().requests.get_mut(handle as usize) {
                     Some(req) => {
                         let mut memory = memory!(caller);
                         let (_, header) = match memory.read(name_addr, name_size) {
@@ -600,6 +604,58 @@ impl Handler {
                     _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
                 }
 
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+
+    fn fastly_http_req_header_values_set(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(
+            &store,
+            move |caller: Caller<'_>,
+                  handle: RequestHandle,
+                  name_addr: i32,
+                  name_size: i32,
+                  values_addr: i32,
+                  values_size: i32| {
+                debug!("fastly_http_req::header_values_set handle={}, name_addr={} name_size={} values_addr={} values_size={}", handle, name_addr, name_size, values_addr, values_size);
+                match clone.inner.borrow_mut().requests.get_mut(handle as usize) {
+                    Some(req) => {
+                        let mut memory = memory!(caller);
+                        let name = match memory.read(name_addr, name_size) {
+                            Ok((_, bytes)) => match HeaderName::from_bytes(&bytes) {
+                                Ok(name) => name,
+                                _ => {
+                                    return Err(Trap::new(format!(
+                                        "invalid header name {:?}",
+                                        std::str::from_utf8(&bytes)
+                                    )))
+                                }
+                            },
+                            _ => return Err(Trap::new("failed to read header name")),
+                        };
+                        // values are \u{0} terminated so read 1 less byte
+                        let value = match memory.read(values_addr, values_size - 1) {
+                            Ok((_, bytes)) => match HeaderValue::from_bytes(&bytes) {
+                                Ok(value) => value,
+                                _ => {
+                                    return Err(Trap::new(format!(
+                                        "invalid header value for header '{}' {:?}",
+                                        name,
+                                        std::str::from_utf8(&bytes)
+                                    )))
+                                }
+                            },
+                            _ => return Err(Trap::new("failed to read header value")),
+                        };
+                        req.headers.append(name, value);
+                    }
+                    _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
+                }
                 Ok(FastlyStatus::OK.code)
             },
         )
@@ -808,7 +864,8 @@ impl Handler {
             handle, addr, maxlen, cursor, ending_cursor_out, nwritten_out);
                 match clone.inner.borrow().responses.get(handle as usize) {
                     Some(resp) => {
-                        let mut names: Vec<_> = resp.headers.keys().map(|h| h.as_str()).collect();
+                        let mut names: Vec<_> =
+                            resp.headers.keys().map(HeaderName::as_str).collect();
                         names.sort_unstable();
                         let mut memory = memory!(caller);
                         let ucursor = cursor as usize;
@@ -924,16 +981,12 @@ impl Handler {
                 match clone.inner.borrow_mut().responses.get_mut(handle as usize) {
                     Some(resp) => {
                         let name = match memory.read(name_addr, name_size) {
-                            Ok((_, bytes)) => {
-                                hyper::header::HeaderName::from_bytes(&bytes).unwrap()
-                            }
+                            Ok((_, bytes)) => HeaderName::from_bytes(&bytes).unwrap(),
                             _ => return Err(Trap::new("Failed to read header name")),
                         };
 
                         let value = match memory.read(values_addr, values_size) {
-                            Ok((_, bytes)) => {
-                                hyper::header::HeaderValue::from_bytes(&bytes).unwrap()
-                            }
+                            Ok((_, bytes)) => HeaderValue::from_bytes(&bytes).unwrap(),
                             _ => return Err(Trap::new("Failed to read header name")),
                         };
                         resp.headers.append(name, value);
@@ -1117,18 +1170,18 @@ impl Handler {
             .define(
                 "fastly_http_req",
                 "downstream_client_ip_addr",
-                self.fastly_http_req_downstream_client_ip_addr(&store, ip)
+                self.fastly_http_req_downstream_client_ip_addr(&store, ip),
             )?
             .define("fastly_http_req", "new", self.fastly_http_req_new(&store))?
             .define(
                 "fastly_http_req",
                 "version_get",
-                self.fastly_http_req_version_get(&store)
+                self.fastly_http_req_version_get(&store),
             )?
             .define(
                 "fastly_http_req",
                 "version_set",
-                self.fastly_http_req_version_set(&store)
+                self.fastly_http_req_version_set(&store),
             )?
             .define(
                 "fastly_http_req",
@@ -1139,46 +1192,52 @@ impl Handler {
                 "fastly_http_req",
                 "method_set",
                 self.fastly_http_req_method_set(&store),
-            )?.define(
-            "fastly_http_req",
-            "uri_get",
-            self.fastly_http_req_uri_get(&store),
-        )?.define(
-            "fastly_http_req",
-            "uri_set",
-            self.fastly_http_req_uri_set(&store)
-        )?.define(
-            "fastly_http_req",
-            "header_names_get",
-            self.fastly_http_req_header_names_get(&store),
-        )?.define(
-            "fastly_http_req",
-            "header_values_get",
-            self.fastly_http_req_header_values_get(&store)
-        )?.func(
-            "fastly_http_req",
-            "header_values_set",
-            |handle: RequestHandle, name_addr: i32, name_size: i32, values_addr: i32, values_size: i32| {
-                debug!("fastly_http_req::header_values_set handle={}, name_addr={} name_size={} values_addr={} values_size={}", handle, name_addr, name_size, values_addr, values_size);
-                FastlyStatus::OK.code
-            },
-        )?.define(
-            "fastly_http_req",
-            "send",
-            self.fastly_http_req_send(&store, backends)
-        )?.define(
-            "fastly_http_req",
-            "cache_override_set",
-            self.fastly_http_req_cache_override_set(&store)
-        )?.define(
-            "fastly_http_req",
-            "cache_override_v2_set",
-            self.fastly_http_req_cache_override_v2_set(&store)
-        )?.func(
-            "fastly_http_req",
-            "original_header_names_get",
-            self.none("fastly_http_req::original_header_names_get"),
-        )?;
+            )?
+            .define(
+                "fastly_http_req",
+                "uri_get",
+                self.fastly_http_req_uri_get(&store),
+            )?
+            .define(
+                "fastly_http_req",
+                "uri_set",
+                self.fastly_http_req_uri_set(&store),
+            )?
+            .define(
+                "fastly_http_req",
+                "header_names_get",
+                self.fastly_http_req_header_names_get(&store),
+            )?
+            .define(
+                "fastly_http_req",
+                "header_values_get",
+                self.fastly_http_req_header_values_get(&store),
+            )?
+            .define(
+                "fastly_http_req",
+                "header_values_set",
+                self.fastly_http_req_header_values_set(&store),
+            )?
+            .define(
+                "fastly_http_req",
+                "send",
+                self.fastly_http_req_send(&store, backends),
+            )?
+            .define(
+                "fastly_http_req",
+                "cache_override_set",
+                self.fastly_http_req_cache_override_set(&store),
+            )?
+            .define(
+                "fastly_http_req",
+                "cache_override_v2_set",
+                self.fastly_http_req_cache_override_v2_set(&store),
+            )?
+            .func(
+                "fastly_http_req",
+                "original_header_names_get",
+                self.none("fastly_http_req::original_header_names_get"),
+            )?;
 
         // fastly response funcs
 

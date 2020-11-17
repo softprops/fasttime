@@ -52,9 +52,14 @@ impl crate::Backends for GeoBackend {
     fn send(
         &self,
         _: &str,
-        _: Request<Body>,
+        req: Request<Body>,
     ) -> Result<Response<Body>, BoxError> {
         log::debug!("geo backend");
+        // see fastly https://docs.rs/fastly/0.5.0/src/fastly/geo.rs.html#31
+        log::debug!(
+            "Fastly-XQD-arg1: {:?}",
+            req.headers().get("Fastly-XQD-arg1")
+        );
         Ok(Response::builder()
             .status(200)
             .body(Body::from(serde_json::to_string(&Geo::default())?))
