@@ -977,7 +977,8 @@ impl Handler {
                   name_size: i32,
                   values_addr: i32,
                   values_size: i32| {
-                debug!("fastly_http_resp::header_values_set");
+                debug!("fastly_http_resp::header_values_set handle={} name_addr={} name_size={} value_addr={} value_size={}", 
+                handle, name_addr, name_size, values_addr, values_size);
                 let mut memory = memory!(caller);
                 match clone.inner.borrow_mut().responses.get_mut(handle as usize) {
                     Some(resp) => {
