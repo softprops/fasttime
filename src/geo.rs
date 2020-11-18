@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::net::IpAddr;
 
 // https://docs.rs/fastly/0.5.0/src/fastly/geo.rs.html#44
+/// A resolved geo lookup result
 #[derive(Serialize, Clone, PartialEq, Debug)]
 pub struct Geo {
     pub as_name: String,
