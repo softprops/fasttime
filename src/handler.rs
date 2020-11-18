@@ -1,5 +1,6 @@
 use crate::{
     backend::Backends,
+    geo,
     memory::{ReadMem, WriteMem},
     BoxError,
 };
@@ -399,7 +400,7 @@ impl Handler {
                 let body = clone.inner.borrow_mut().bodies.remove(body_handle as usize);
                 let req = Request::from_parts(parts, body);
                 let (parts, body) = match backend {
-                    "geolocation" => crate::geo::GeoBackend
+                    "geolocation" => geo::GeoBackend(Box::new(geo::Geo::default()))
                         .send(backend, req)
                         .expect("failed to send request")
                         .into_parts(),
