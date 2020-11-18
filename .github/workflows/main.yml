@@ -1,6 +1,16 @@
 name: Main
 
-on: push
+on:
+  push:
+    paths-ignore:
+      - 'README.md'
+    branches:
+      - main
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+    branches:
+      - main
 
 jobs:
   codestyle:
