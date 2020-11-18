@@ -163,6 +163,105 @@ impl Handler {
         )
     }
 
+    fn fastly_http_req_original_header_names_get(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(
+            store,
+            move |caller: Caller<'_>,
+                  buf: i32,
+                  _buf_len: i32,
+                  cursor: i32,
+                  ending_cursor: i32,
+                  nwritten: i32| {
+                debug!("fastly_http_req::original_header_names_get");
+
+                let mut names: Vec<_> = clone
+                    .inner
+                    .borrow()
+                    .request
+                    .as_ref()
+                    .map(|r| {
+                        r.headers()
+                            .keys()
+                            .map(HeaderName::as_str)
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                    })
+                    .or_else(|| {
+                        clone.inner.borrow().requests.first().map(|r| {
+                            r.headers
+                                .keys()
+                                .map(HeaderName::as_str)
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .unwrap_or_default();
+
+                names.sort_unstable();
+                let mut memory = memory!(caller);
+                let ucursor = cursor as usize;
+                if ucursor >= names.len() {
+                    memory.write_i32(nwritten, 0);
+                    memory.write_i32(ending_cursor, -1);
+                    return Ok(FastlyStatus::OK.code);
+                }
+                debug!(
+                    "fastly_http_req::header_names_get {:?} ({})",
+                    names.get(ucursor),
+                    ucursor
+                );
+                let mut bytes = names.get(ucursor).unwrap().as_bytes().to_vec();
+                bytes.push(0); // api requires a terminating \x00 byte
+                let written = memory.write(buf, &bytes).unwrap();
+                memory.write_i32(nwritten, written as i32);
+                memory.write_i32(
+                    ending_cursor,
+                    if ucursor < names.len() - 1 {
+                        cursor + 1 as i32
+                    } else {
+                        -1 as i32
+                    },
+                );
+
+                Ok(FastlyStatus::OK.code)
+            },
+        )
+    }
+
+    fn fastly_http_req_original_header_count(
+        &self,
+        store: &Store,
+    ) -> Func {
+        let clone = self.clone();
+        Func::wrap(store, move |caller: Caller<'_>, count_out: i32| {
+            debug!(
+                "fastly_http_req::original_header_count count_out={}",
+                count_out
+            );
+            let count = clone
+                .inner
+                .borrow()
+                .request
+                .as_ref()
+                .map(|r| r.headers().len())
+                .or_else(|| {
+                    clone
+                        .inner
+                        .borrow()
+                        .requests
+                        .first()
+                        .map(|r| r.headers.len())
+                })
+                .unwrap_or_default();
+            memory!(caller).write_i32(count_out, count as i32);
+            Ok(FastlyStatus::OK.code)
+        })
+    }
+
     fn body_downstream_get(
         &self,
         store: &Store,
@@ -1171,10 +1270,10 @@ impl Handler {
                 "send_async",
                 self.none("fastly_http_req::send_async"),
             )?
-            .func(
+            .define(
                 "fastly_http_req",
                 "original_header_count",
-                self.none("fastly_http_req::original_header_count"),
+                self.fastly_http_req_original_header_count(&store),
             )?
             .func(
                 "fastly_http_req",
@@ -1252,10 +1351,10 @@ impl Handler {
                 "cache_override_v2_set",
                 self.fastly_http_req_cache_override_v2_set(&store),
             )?
-            .func(
+            .define(
                 "fastly_http_req",
                 "original_header_names_get",
-                self.none("fastly_http_req::original_header_names_get"),
+                self.fastly_http_req_original_header_names_get(&store),
             )?;
 
         // fastly response funcs
