@@ -982,12 +982,29 @@ impl Handler {
                 match clone.inner.borrow_mut().responses.get_mut(handle as usize) {
                     Some(resp) => {
                         let name = match memory.read(name_addr, name_size) {
-                            Ok((_, bytes)) => HeaderName::from_bytes(&bytes).unwrap(),
+                            Ok((_, bytes)) => match HeaderName::from_bytes(&bytes) {
+                                Ok(name) => name,
+                                _ => {
+                                    return Err(Trap::new(format!(
+                                        "Invalid header name {:?}",
+                                        std::str::from_utf8(&bytes)
+                                    )))
+                                }
+                            },
                             _ => return Err(Trap::new("Failed to read header name")),
                         };
-
-                        let value = match memory.read(values_addr, values_size) {
-                            Ok((_, bytes)) => HeaderValue::from_bytes(&bytes).unwrap(),
+                        // values are \u{0} terminated so read one less byte
+                        let value = match memory.read(values_addr, values_size - 1) {
+                            Ok((_, bytes)) => match HeaderValue::from_bytes(&bytes) {
+                                Ok(value) => value,
+                                _ => {
+                                    return Err(Trap::new(format!(
+                                        "Invalid header value for header {} {:?}",
+                                        name,
+                                        std::str::from_utf8(&bytes)
+                                    )))
+                                }
+                            },
                             _ => return Err(Trap::new("Failed to read header name")),
                         };
                         resp.headers.append(name, value);
