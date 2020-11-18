@@ -80,6 +80,20 @@ $ fasttime -w target/wasm32-wasi/release/app.wasm \
     -d dictionary-two:baz=boom
 ```
 
+#### 🪵 logging
+
+The Compute@Edge runtime supports the notion of [remote logging endpoints](https://docs.fastly.com/en/guides/setting-up-remote-log-streaming).
+These are addressed by name within your applications.
+
+```rust
+use fastly::log::Endpoint;
+
+let mut endpoint = Endpoint::from_name("endpoint-name");
+writeln!(endpoint, "hello {}", "wasm");
+```
+
+`fasttime` currently support these by logging directly to stdout by default.
+
 #### 🔍 debugging
 
 Set the `RUST_LOG` env variable to `fastime=debug` and run the cli as usual
