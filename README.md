@@ -82,7 +82,7 @@ $ fasttime -w target/wasm32-wasi/release/app.wasm \
 
 #### 🪵 logging
 
-The Compute@Edge runtime supports the notion of [remote logging endpoints](https://docs.fastly.com/en/guides/setting-up-remote-log-streaming).
+The Compute@Edge runtime supports the notion of [remote logging endpoints](https://docs.fastly.com/en/guides/about-fastlys-realtime-log-streaming-features).
 These are addressed by name within your applications.
 
 ```rust
