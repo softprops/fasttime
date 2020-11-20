@@ -2,6 +2,17 @@ use byteorder::{ByteOrder, LittleEndian};
 use std::io::{self, Read, Write};
 use wasmtime::Memory;
 
+/// macro for getting exported memory from `Caller` or early return  on `Trap` error
+#[macro_export]
+macro_rules! memory {
+    ($expr:expr) => {
+        match $expr.get_export("memory") {
+            Some(::wasmtime::Extern::Memory(mem)) => mem,
+            _ => return Err(Trap::new("failed to resolve exported host memory")),
+        };
+    };
+}
+
 /// Convience api for common write operations
 pub trait WriteMem {
     fn write_i32(
