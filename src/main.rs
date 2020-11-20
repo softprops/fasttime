@@ -61,9 +61,9 @@ fn parse_dictionary(s: &str) -> Result<(String, HashMap<String, String>), Box<dy
 #[derive(Debug, StructOpt)]
 struct Opts {
     /// Path to .wasm file
-    #[structopt(long, short)]
+    #[structopt(long, short, default_value = "bin/main.wasm")]
     wasm: PathBuf,
-    /// Port to listen on (defaults to 3000)
+    /// Port to listen on
     #[structopt(long, short, default_value = "3000")]
     port: u16,
     /// Backend to proxy in backend-name:host format (foo:foo.org)
