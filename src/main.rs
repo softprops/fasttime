@@ -170,3 +170,22 @@ async fn main() {
         exit(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rewrite_uri() -> Result<(), BoxError> {
+        let req = Request::builder()
+                .uri("/foo")
+                .header(HOST, "fasttime.co")
+                .body(hyper::Body::empty())?;
+        let rewritten = rewrite_uri(
+            req,
+        )?;
+        assert_eq!(rewritten.uri().authority(), Some(&"fasttime.co".parse::<Authority>()?));
+        assert_eq!(rewritten.uri().scheme().map(Scheme::as_str), Some("http"));
+        Ok(())
+    }
+}
