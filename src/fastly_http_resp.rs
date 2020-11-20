@@ -36,7 +36,7 @@ pub fn send_downstream(
                 .responses
                 .remove(whandle as usize);
             let body = handler.inner.borrow_mut().bodies.remove(bhandle as usize);
-            handler.inner.borrow_mut().response = hyper::Response::from_parts(parts, body);
+            handler.inner.borrow_mut().response = Response::from_parts(parts, body);
 
             FastlyStatus::OK.code
         },
@@ -169,7 +169,7 @@ pub fn header_values_get(
             {
                 Some(resp) => {
                     let name = match memory.read(name_addr, name_size) {
-                        Ok((_, bytes)) => hyper::header::HeaderName::from_bytes(&bytes).unwrap(),
+                        Ok((_, bytes)) => HeaderName::from_bytes(&bytes).unwrap(),
                         _ => return Err(Trap::new("Failed to read header name")),
                     };
 

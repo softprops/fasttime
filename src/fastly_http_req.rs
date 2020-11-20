@@ -10,7 +10,7 @@ use crate::{
 use fastly_shared::{FastlyStatus, HttpVersion};
 use hyper::{
     header::{HeaderName, HeaderValue},
-    Body, Request,
+    Body, Method, Request, Uri,
 };
 use log::debug;
 use std::{convert::TryFrom, net::IpAddr};
@@ -234,7 +234,7 @@ pub fn method_set(
                 Ok(result) => result,
                 _ => return Err(Trap::new("failed to read body memory")),
             };
-            match hyper::Method::from_bytes(&buf) {
+            match Method::from_bytes(&buf) {
                 Ok(method) => match handler.inner.borrow_mut().requests.get_mut(handle as usize) {
                     Some(req) => req.method = method,
                     _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
@@ -365,7 +365,7 @@ pub fn uri_set(
                         Ok(result) => result,
                         _ => return Err(Trap::new("failed to read request uri")),
                     };
-                    req.uri = hyper::Uri::from_maybe_shared(buf)
+                    req.uri = Uri::from_maybe_shared(buf)
                         .map_err(|_| Trap::i32_exit(FastlyStatus::HTTPPARSE.code))?;
                 }
                 _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
