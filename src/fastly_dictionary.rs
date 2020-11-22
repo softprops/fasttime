@@ -27,7 +27,7 @@ pub fn add_to_linker<'a>(
     Ok(linker)
 }
 
-pub fn open(
+fn open(
     handler: Handler,
     store: &Store,
     dictionaries: HashMap<String, HashMap<String, String>>,
@@ -54,7 +54,8 @@ pub fn open(
         },
     )
 }
-pub fn get(
+
+fn get(
     handler: Handler,
     store: &Store,
 ) -> Func {
