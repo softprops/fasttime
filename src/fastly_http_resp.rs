@@ -112,6 +112,7 @@ pub fn header_names_get(
                     names.sort_unstable();
                     let mut memory = memory!(caller);
                     let ucursor = cursor as usize;
+
                     if ucursor >= names.len() {
                         memory.write_i32(nwritten_out, 0);
                         memory.write_i32(ending_cursor_out, -1);

@@ -112,17 +112,7 @@ impl Handler {
 
         linker.func("fastly_uap", "parse", self.none("fastly_uap::parse"))?;
 
-        linker
-            .define(
-                "fastly_dictionary",
-                "open",
-                crate::fastly_dictionary::open(self.clone(), &store, dictionaries),
-            )?
-            .define(
-                "fastly_dictionary",
-                "get",
-                crate::fastly_dictionary::get(self.clone(), &store),
-            )?;
+        crate::fastly_dictionary::add_to_linker(&mut linker, self.clone(), &store, dictionaries)?;
 
         // fastly log funcs
 

@@ -2,13 +2,30 @@ use crate::{
     handler::Handler,
     memory,
     memory::{ReadMem, WriteMem},
+    BoxError,
 };
 use fastly_shared::FastlyStatus;
 use log::debug;
 use std::collections::HashMap;
-use wasmtime::{Caller, Func, Store, Trap};
+use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 type DictionaryHandle = i32;
+
+pub fn add_to_linker<'a>(
+    linker: &'a mut Linker,
+    handler: Handler,
+    store: &Store,
+    dictionaries: HashMap<String, HashMap<String, String>>,
+) -> Result<&'a mut Linker, BoxError> {
+    linker
+        .define(
+            "fastly_dictionary",
+            "open",
+            open(handler.clone(), &store, dictionaries),
+        )?
+        .define("fastly_dictionary", "get", get(handler, &store))?;
+    Ok(linker)
+}
 
 pub fn open(
     handler: Handler,
