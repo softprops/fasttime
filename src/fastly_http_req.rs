@@ -187,7 +187,7 @@ fn original_header_count(
             "fastly_http_req::original_header_count count_out={}",
             count_out
         );
-        let count = handler
+        let count: i32 = match handler
             .inner
             .borrow()
             .request
@@ -201,8 +201,13 @@ fn original_header_count(
                     .first()
                     .map(|r| r.headers.len())
             })
-            .unwrap_or_default();
-        memory!(caller).write_i32(count_out, count as i32);
+            .unwrap_or_default()
+        {
+            value if value < 1 => -1,
+            value => value as i32,
+        };
+        debug!("fastly_http_req::original_header_count count => {}", count);
+        memory!(caller).write_i32(count_out, count);
         Ok(FastlyStatus::OK.code)
     })
 }

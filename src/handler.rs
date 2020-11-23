@@ -106,7 +106,7 @@ impl Handler {
 
         // fill in the [`fastly-sys`](https://crates.io/crates/fastly-sys) funcs
 
-        linker.func("fastly_abi", "init", |version: i32| {
+        linker.func("fastly_abi", "init", |version: i64| {
             debug!("fastly_abi::init version={}", version);
             FastlyStatus::OK.code
         })?;
@@ -136,12 +136,15 @@ mod tests {
 
     #[tokio::test]
     async fn it_works() -> Result<(), BoxError> {
-        if !Path::new("./tests/app/bin/main.wasm").exists() {
+        pretty_env_logger::init();
+
+        let path = Path::new("./tests/app/target/wasm32-wasi/release/app.wasm");
+        if !path.exists() {
             return Ok(());
         }
         // todo create one eng/module for all tests
         let engine = Engine::default();
-        let module = Module::from_file(&engine, "./tests/app/bin/main.wasm")?;
+        let module = Module::from_file(&engine, path)?;
 
         let response = Handler::new(Request::default()).run(
             &module,
