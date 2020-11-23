@@ -106,7 +106,7 @@ pub fn add_to_linker<'a>(
         .define(
             "fastly_http_req",
             "original_header_names_get",
-            original_header_names_get(handler.clone(), &store),
+            original_header_names_get(handler, &store),
         )?)
 }
 
