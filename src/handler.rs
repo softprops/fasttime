@@ -106,7 +106,10 @@ impl Handler {
 
         // fill in the [`fastly-sys`](https://crates.io/crates/fastly-sys) funcs
 
-        linker.func("fastly_abi", "init", self.one_i64("fastly_abi:init"))?;
+        linker.func("fastly_abi", "init", |version: i32| {
+            debug!("fastly_abi::init version={}", version);
+            FastlyStatus::OK.code
+        })?;
 
         linker.define("fastly_uap", "parse", crate::fastly_uap::parse(&store))?;
 
@@ -121,18 +124,6 @@ impl Handler {
         crate::fastly_http_resp::add_to_linker(&mut linker, self.clone(), &store)?;
 
         Ok(linker)
-    }
-
-    // stubs
-
-    fn one_i64(
-        &self,
-        name: &'static str,
-    ) -> impl Fn(i64) -> i32 {
-        move |_: i64| {
-            debug!("{} (stub)", name);
-            FastlyStatus::UNSUPPORTED.code
-        }
     }
 }
 
