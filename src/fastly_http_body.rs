@@ -21,21 +21,9 @@ pub fn add_to_linker<'a>(
             debug!("fastly_http_body::close");
             FastlyStatus::OK.code
         })?
-        .define(
-            "fastly_http_body",
-            "new",
-            crate::fastly_http_body::new(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_body",
-            "write",
-            crate::fastly_http_body::write(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_body",
-            "read",
-            crate::fastly_http_body::read(handler, &store),
-        )?
+        .define("fastly_http_body", "new", new(handler.clone(), &store))?
+        .define("fastly_http_body", "write", write(handler.clone(), &store))?
+        .define("fastly_http_body", "read", read(handler, &store))?
         .func("fastly_http_body", "append", || {
             debug!("fastly_http_body::append");
             FastlyStatus::OK.code
