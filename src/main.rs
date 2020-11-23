@@ -4,6 +4,7 @@ mod fastly_http_body;
 mod fastly_http_req;
 mod fastly_http_resp;
 mod fastly_log;
+mod fastly_uap;
 mod geo;
 mod handler;
 mod memory;

@@ -574,6 +574,7 @@ dependencies = [
  "tokio",
  "wasmtime",
  "wasmtime-wasi",
+ "woothee",
 ]
 
 [[package]]
@@ -2496,6 +2497,16 @@ dependencies = [
  "log",
  "thiserror",
  "wast 22.0.0",
+]
+
+[[package]]
+name = "woothee"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89d5a45c5d9c772e577c263597681448fd91a46aed911783394eec396e45d4ee"
+dependencies = [
+ "lazy_static",
+ "regex",
 ]
 
 [[package]]

@@ -15,7 +15,7 @@ impl Endpoint {
         &self,
         msg: &str,
     ) {
-        println!("{}", msg);
+        print!("{}", msg);
     }
 }
 /// Represents state within a given request/response cycle
@@ -83,8 +83,6 @@ impl Handler {
         Ok(self.into_response())
     }
 
-    // responses
-
     /// Builds a new linker given a provided `Store`
     /// configured with WASI and Fastly sys func implementations
     fn linker(
@@ -110,7 +108,7 @@ impl Handler {
 
         linker.func("fastly_abi", "init", self.one_i64("fastly_abi:init"))?;
 
-        linker.func("fastly_uap", "parse", self.none("fastly_uap::parse"))?;
+        linker.define("fastly_uap", "parse", crate::fastly_uap::parse(&store))?;
 
         crate::fastly_dictionary::add_to_linker(&mut linker, self.clone(), &store, dictionaries)?;
 
