@@ -1,2 +1,4 @@
 /target
 tests/app
+cert.pem
+key.pem
