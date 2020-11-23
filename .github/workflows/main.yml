@@ -68,6 +68,7 @@ jobs:
         uses: hecrj/setup-rust-action@v1
         with:
             targets: wasm32-wasi
+            rust-version: "1.46.0"
       - name: Build
         working-directory: tests/app
         run: cargo build --release --target wasm32-wasi
