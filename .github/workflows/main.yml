@@ -70,7 +70,7 @@ jobs:
             targets: wasm32-wasi
       - name: Build
         working-directory: tests/app
-        run: argo build--release --target wasm32-wasi
+        run: cargo build--release --target wasm32-wasi
       - name: Upload wasm
         uses: actions/upload-artifact@v1
         with:
