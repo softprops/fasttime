@@ -3,6 +3,7 @@ use crate::{
     handler::Handler,
     memory,
     memory::{ReadMem, WriteMem},
+    BoxError,
 };
 use fastly_shared::{FastlyStatus, HttpVersion};
 use hyper::{
@@ -11,11 +12,60 @@ use hyper::{
 };
 use log::debug;
 use std::convert::TryFrom;
-use wasmtime::{Caller, Func, Store, Trap};
+use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 pub type ResponseHandle = i32;
 
-pub fn send_downstream(
+pub fn add_to_linker<'a>(
+    linker: &'a mut Linker,
+    handler: Handler,
+    store: &Store,
+) -> Result<&'a mut Linker, BoxError> {
+    Ok(linker
+        .define("fastly_http_resp", "new", new(handler.clone(), &store))?
+        .define(
+            "fastly_http_resp",
+            "send_downstream",
+            send_downstream(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_resp",
+            "status_get",
+            status_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_resp",
+            "status_set",
+            status_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_resp",
+            "version_get",
+            version_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_resp",
+            "version_set",
+            version_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_resp",
+            "header_names_get",
+            header_names_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_resp",
+            "header_values_get",
+            header_values_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_resp",
+            "header_values_set",
+            header_values_set(handler, &store),
+        )?)
+}
+
+fn send_downstream(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -43,7 +93,7 @@ pub fn send_downstream(
     )
 }
 
-pub fn status_set(
+fn status_set(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -72,7 +122,7 @@ pub fn status_set(
     })
 }
 
-pub fn new(
+fn new(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -91,7 +141,7 @@ pub fn new(
     })
 }
 
-pub fn header_names_get(
+fn header_names_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -144,7 +194,7 @@ pub fn header_names_get(
     )
 }
 
-pub fn header_values_get(
+fn header_values_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -209,7 +259,7 @@ pub fn header_values_get(
     )
 }
 
-pub fn header_values_set(
+fn header_values_set(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -267,7 +317,7 @@ pub fn header_values_set(
     )
 }
 
-pub fn status_get(
+fn status_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -287,7 +337,7 @@ pub fn status_get(
     )
 }
 
-pub fn version_get(
+fn version_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -310,7 +360,7 @@ pub fn version_get(
     )
 }
 
-pub fn version_set(
+fn version_set(
     handler: Handler,
     store: &Store,
 ) -> Func {

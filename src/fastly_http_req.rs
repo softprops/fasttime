@@ -6,6 +6,7 @@ use crate::{
     handler::Handler,
     memory,
     memory::{ReadMem, WriteMem},
+    BoxError,
 };
 use fastly_shared::{FastlyStatus, HttpVersion};
 use hyper::{
@@ -14,11 +15,102 @@ use hyper::{
 };
 use log::debug;
 use std::{convert::TryFrom, net::IpAddr};
-use wasmtime::{Caller, Func, Store, Trap};
+use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 pub type RequestHandle = i32;
 
-pub fn original_header_names_get(
+pub fn add_to_linker<'a>(
+    linker: &'a mut Linker,
+    handler: Handler,
+    store: &Store,
+    backends: Box<dyn crate::Backends>,
+    ip: IpAddr,
+) -> Result<&'a mut Linker, BoxError> {
+    Ok(linker
+        .define(
+            "fastly_http_req",
+            "original_header_count",
+            original_header_count(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "body_downstream_get",
+            body_downstream_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "downstream_client_ip_addr",
+            downstream_client_ip_addr(handler.clone(), &store, ip),
+        )?
+        .define("fastly_http_req", "new", new(handler.clone(), &store))?
+        .define(
+            "fastly_http_req",
+            "version_get",
+            version_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "version_set",
+            version_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "method_get",
+            method_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "method_set",
+            method_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "uri_get",
+            uri_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "uri_set",
+            uri_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "header_names_get",
+            header_names_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "header_values_get",
+            header_values_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "header_values_set",
+            header_values_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "send",
+            send(handler.clone(), &store, backends),
+        )?
+        .define(
+            "fastly_http_req",
+            "cache_override_set",
+            cache_override_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "cache_override_v2_set",
+            cache_override_v2_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "original_header_names_get",
+            original_header_names_get(handler.clone(), &store),
+        )?)
+}
+
+fn original_header_names_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -86,7 +178,7 @@ pub fn original_header_names_get(
     )
 }
 
-pub fn original_header_count(
+fn original_header_count(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -115,7 +207,7 @@ pub fn original_header_count(
     })
 }
 
-pub fn body_downstream_get(
+fn body_downstream_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -146,7 +238,7 @@ pub fn body_downstream_get(
     )
 }
 
-pub fn downstream_client_ip_addr(
+fn downstream_client_ip_addr(
     _handler: Handler,
     store: &Store,
     ip: IpAddr,
@@ -176,7 +268,7 @@ pub fn downstream_client_ip_addr(
     )
 }
 
-pub fn new(
+fn new(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -190,7 +282,7 @@ pub fn new(
     })
 }
 
-pub fn method_get(
+fn method_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -223,7 +315,7 @@ pub fn method_get(
     )
 }
 
-pub fn method_set(
+fn method_set(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -247,7 +339,7 @@ pub fn method_set(
     )
 }
 
-pub fn uri_get(
+fn uri_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -281,7 +373,7 @@ pub fn uri_get(
     )
 }
 
-pub fn send(
+fn send(
     handler: Handler,
     store: &Store,
     backends: Box<dyn crate::Backends>,
@@ -343,7 +435,7 @@ pub fn send(
     )
 }
 
-pub fn uri_set(
+fn uri_set(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -375,7 +467,7 @@ pub fn uri_set(
     )
 }
 
-pub fn cache_override_set(
+fn cache_override_set(
     _handler: Handler,
     store: &Store,
 ) -> Func {
@@ -389,7 +481,7 @@ pub fn cache_override_set(
     })
 }
 
-pub fn cache_override_v2_set(
+fn cache_override_v2_set(
     _handler: Handler,
     store: &Store,
 ) -> Func {
@@ -417,7 +509,7 @@ pub fn cache_override_v2_set(
     )
 }
 
-pub fn header_names_get(
+fn header_names_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -467,7 +559,7 @@ pub fn header_names_get(
     )
 }
 
-pub fn header_values_get(
+fn header_values_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -527,7 +619,7 @@ pub fn header_values_get(
     )
 }
 
-pub fn header_values_set(
+fn header_values_set(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -578,7 +670,7 @@ pub fn header_values_set(
     )
 }
 
-pub fn version_get(
+fn version_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -600,7 +692,7 @@ pub fn version_get(
     )
 }
 
-pub fn version_set(
+fn version_set(
     handler: Handler,
     store: &Store,
 ) -> Func {

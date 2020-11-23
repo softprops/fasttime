@@ -2,14 +2,33 @@ use crate::{
     handler::{Endpoint, Handler},
     memory,
     memory::{ReadMem, WriteMem},
+    BoxError,
 };
 use fastly_shared::FastlyStatus;
 use log::debug;
-use wasmtime::{Caller, Func, Store, Trap};
+use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 type EndpointHandle = i32;
 
-pub fn endpoint_get(
+pub fn add_to_linker<'a>(
+    linker: &'a mut Linker,
+    handler: Handler,
+    store: &Store,
+) -> Result<&'a mut Linker, BoxError> {
+    Ok(linker
+        .define(
+            "fastly_log",
+            "endpoint_get",
+            crate::fastly_log::endpoint_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_log",
+            "write",
+            crate::fastly_log::write(handler, &store),
+        )?)
+}
+
+fn endpoint_get(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -41,7 +60,7 @@ pub fn endpoint_get(
     )
 }
 
-pub fn write(
+fn write(
     handler: Handler,
     store: &Store,
 ) -> Func {

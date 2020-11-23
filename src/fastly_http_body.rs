@@ -2,15 +2,47 @@ use crate::{
     handler::Handler,
     memory,
     memory::{ReadMem, WriteMem},
+    BoxError,
 };
 use fastly_shared::FastlyStatus;
 use hyper::Body;
 use log::debug;
-use wasmtime::{Caller, Func, Store, Trap};
+use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 pub type BodyHandle = i32;
 
-pub fn new(
+pub fn add_to_linker<'a>(
+    linker: &'a mut Linker,
+    handler: Handler,
+    store: &Store,
+) -> Result<&'a mut Linker, BoxError> {
+    Ok(linker
+        .func("fastly_http_body", "close", || {
+            debug!("fastly_http_body::close");
+            FastlyStatus::OK.code
+        })?
+        .define(
+            "fastly_http_body",
+            "new",
+            crate::fastly_http_body::new(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_body",
+            "write",
+            crate::fastly_http_body::write(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_body",
+            "read",
+            crate::fastly_http_body::read(handler, &store),
+        )?
+        .func("fastly_http_body", "append", || {
+            debug!("fastly_http_body::append");
+            FastlyStatus::OK.code
+        })?)
+}
+
+fn new(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -24,7 +56,7 @@ pub fn new(
     })
 }
 
-pub fn write(
+fn write(
     handler: Handler,
     store: &Store,
 ) -> Func {
@@ -59,7 +91,7 @@ pub fn write(
     )
 }
 
-pub fn read(
+fn read(
     handler: Handler,
     store: &Store,
 ) -> Func {
