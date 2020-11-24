@@ -111,7 +111,7 @@ impl Handler {
             FastlyStatus::OK.code
         })?;
 
-        crate::fastly_uap::add_to_linker(&mut linker, &store);
+        crate::fastly_uap::add_to_linker(&mut linker, &store)?;
         crate::fastly_dictionary::add_to_linker(&mut linker, self.clone(), &store, dictionaries)?;
         crate::fastly_http_body::add_to_linker(&mut linker, self.clone(), &store)?;
         crate::fastly_log::add_to_linker(&mut linker, self.clone(), &store)?;
@@ -209,9 +209,59 @@ mod tests {
                     HashMap::default(),
                     "127.0.0.1".parse()?,
                 ) {
-                    Ok(_) => assert!(false),
+                    Ok(_) => panic!("expected error"),
                     Err(e) => assert_eq!(e.to_string(), "test"),
                 }
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn downstream_original_header_count_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("/downstream_original_header_count")
+                        .header("foo", "bar")
+                        .body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!(
+                    "downstream_original_header_count 1",
+                    str::from_utf8(&to_bytes(resp.into_body()).await?)?
+                );
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn downstream_client_ip_addr_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("/downstream_client_ip_addr").body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!(
+                    "downstream_client_ip_addr Some(V4(127.0.0.1))",
+                    str::from_utf8(&to_bytes(resp.into_body()).await?)?
+                );
                 Ok(())
             }
         }

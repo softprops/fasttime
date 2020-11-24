@@ -2,8 +2,8 @@
 
 use fastly::{
     dictionary::Dictionary,
-    log::Endpoint,
     http::{HeaderValue, Method, StatusCode},
+    log::Endpoint,
     request::CacheOverride,
     Body, Error, Request, RequestExt, Response, ResponseExt,
 };
@@ -14,7 +14,6 @@ use std::io::Write;
 /// This should be changed to match the name of your own backend. See the the `Hosts` section of
 /// the Fastly WASM service UI for more information.
 const BACKEND_NAME: &str = "backend_name";
-
 
 /// The name of a second backend associated with this service.
 const OTHER_BACKEND_NAME: &str = "other_backend_name";
@@ -38,14 +37,13 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
         drop(writeln!(log, "{:?}", hdr))
     }
 
-
     if let Some(ua) = req.headers().get("User-Agent") {
-        drop(writeln!(log, "{:?}", fastly::uap_parse(ua.to_str()?)));
+        drop(writeln!(
+            log,
+            "user agent {:?}",
+            fastly::uap_parse(ua.to_str()?)
+        ));
     }
-
-    drop(writeln!(log, "{:?}", fastly::downstream_original_header_count()));
-
-    drop(writeln!(log, "{:?}", fastly::downstream_client_ip_addr()));
 
     // We can filter requests that have unexpected methods.
     const VALID_METHODS: [Method; 3] = [Method::HEAD, Method::GET, Method::POST];
@@ -61,9 +59,19 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
         (&Method::GET, "/") => Ok(Response::builder()
             .status(StatusCode::OK)
             .body(Body::from("Welcome to Fastly Compute@Edge!"))?),
-
-        (&Method::GET, "/dictionary-hit") => match Dictionary::open("dict").get("foo")
-        {
+        (&Method::GET, "/downstream_original_header_count") => Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(format!(
+                "downstream_original_header_count {}",
+                fastly::downstream_original_header_count()
+            )))?),
+        (&Method::GET, "/downstream_client_ip_addr") => Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(format!(
+                "downstream_client_ip_addr {:?}",
+                fastly::downstream_client_ip_addr()
+            )))?),
+        (&Method::GET, "/dictionary-hit") => match Dictionary::open("dict").get("foo") {
             Some(foo) => Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::from(format!("dict::foo is {}", foo)))?),
@@ -71,8 +79,7 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
                 .status(StatusCode::BAD_REQUEST)
                 .body(Body::from("dict::foo is unknown"))?),
         },
-        (&Method::GET, "/dictionary-miss") => match Dictionary::open("bogus").get("foo")
-        {
+        (&Method::GET, "/dictionary-miss") => match Dictionary::open("bogus").get("foo") {
             Some(foo) => Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::from(format!("bogus::foo is {}", foo)))?),
@@ -81,14 +88,13 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
                 .body(Body::from("dict::foo is unknown"))?),
         },
 
-        (&Method::GET, "/geo") => 
-        {
+        (&Method::GET, "/geo") => {
             let client_ip = fastly::downstream_client_ip_addr().unwrap();
             let geo = fastly::geo::geo_lookup(client_ip);
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::from(format!("ip {} {:?}", client_ip, geo)))?)
-        },
+        }
 
         // If request is a `GET` to the `/backend` path, send to a named backend.
         (&Method::GET, "/backend") => {
