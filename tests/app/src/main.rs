@@ -62,11 +62,20 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
             .status(StatusCode::OK)
             .body(Body::from("Welcome to Fastly Compute@Edge!"))?),
 
-        (&Method::GET, "/dictionary") => match Dictionary::open("dict").get("foo")
+        (&Method::GET, "/dictionary-hit") => match Dictionary::open("dict").get("foo")
         {
             Some(foo) => Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::from(format!("dict::foo is {}", foo)))?),
+            _ => Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from("dict::foo is unknown"))?),
+        },
+        (&Method::GET, "/dictionary-miss") => match Dictionary::open("bogus").get("foo")
+        {
+            Some(foo) => Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from(format!("bogus::foo is {}", foo)))?),
             _ => Ok(Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body(Body::from("dict::foo is unknown"))?),

@@ -565,6 +565,7 @@ dependencies = [
  "http",
  "hyper",
  "hyper-rustls",
+ "lazy_static",
  "log",
  "pretty_env_logger",
  "reqwest",

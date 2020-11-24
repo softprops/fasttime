@@ -130,35 +130,95 @@ impl Handler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper::Request;
-    use std::path::Path;
+    use hyper::{body::to_bytes, Request};
+    use lazy_static::lazy_static;
+    use std::{path::Path, str};
     use wasmtime::Engine;
+
+    lazy_static! {
+        static ref WASM: Option<(Engine, Module)> =
+            match Path::new("./tests/app/target/wasm32-wasi/release/app.wasm") {
+                path if !path.exists() => {
+                    pretty_env_logger::init();
+                    debug!("test wasm app is absent. will skip wasm tests");
+                    None
+                }
+                path => {
+                    pretty_env_logger::init();
+                    debug!("loading wasm for test");
+                    let engine = Engine::default();
+                    Module::from_file(&engine, path)
+                        .ok()
+                        .map(|module| (engine, module))
+                }
+            };
+    }
 
     #[tokio::test]
     async fn it_works() -> Result<(), BoxError> {
-        pretty_env_logger::init();
-
-        let path = Path::new("./tests/app/target/wasm32-wasi/release/app.wasm");
-        if !path.exists() {
-            return Ok(());
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let response = Handler::new(Request::default()).run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!(
+                    "Welcome to Fastly Compute@Edge!",
+                    str::from_utf8(&to_bytes(response.into_body()).await?)?
+                );
+                Ok(())
+            }
         }
-        // todo create one eng/module for all tests
-        let engine = Engine::default();
-        let module = Module::from_file(&engine, path)?;
+    }
 
-        let response = Handler::new(Request::default()).run(
-            &module,
-            Store::new(&engine),
-            crate::backend::default(),
-            HashMap::default(),
-            "127.0.0.1".parse()?,
-        )?;
-        println!("{:?}", response.status());
-        let bytes = hyper::body::to_bytes(response.into_body()).await?;
-        assert_eq!(
-            "Welcome to Fastly Compute@Edge!",
-            std::str::from_utf8(&bytes)?
-        );
-        Ok(())
+    #[tokio::test]
+    async fn dictionary_hits_work() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let mut dictionaries = HashMap::new();
+                let mut dictionary = HashMap::new();
+                dictionary.insert("foo".to_string(), "bar".to_string());
+                dictionaries.insert("dict".to_string(), dictionary);
+                let resp = Handler::new(Request::get("/dictionary-hit").body(Default::default())?)
+                    .run(
+                        &module,
+                        Store::new(&engine),
+                        crate::backend::default(),
+                        dictionaries.clone(),
+                        "127.0.0.1".parse()?,
+                    )?;
+                assert_eq!(
+                    "dict::foo is bar",
+                    str::from_utf8(&to_bytes(resp.into_body()).await?)?
+                );
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn dictionary_misses_work() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                match Handler::new(Request::get("/dictionary-miss").body(Default::default())?).run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                ) {
+                    Ok(_) => assert!(false),
+                    Err(e) => assert_eq!(e.to_string(), "test"),
+                }
+                Ok(())
+            }
+        }
     }
 }
