@@ -111,16 +111,11 @@ impl Handler {
             FastlyStatus::OK.code
         })?;
 
-        linker.define("fastly_uap", "parse", crate::fastly_uap::parse(&store))?;
-
+        crate::fastly_uap::add_to_linker(&mut linker, &store);
         crate::fastly_dictionary::add_to_linker(&mut linker, self.clone(), &store, dictionaries)?;
-
         crate::fastly_http_body::add_to_linker(&mut linker, self.clone(), &store)?;
-
         crate::fastly_log::add_to_linker(&mut linker, self.clone(), &store)?;
-
         crate::fastly_http_req::add_to_linker(&mut linker, self.clone(), &store, backends, ip)?;
-
         crate::fastly_http_resp::add_to_linker(&mut linker, self.clone(), &store)?;
 
         Ok(linker)

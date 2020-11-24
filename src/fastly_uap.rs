@@ -1,13 +1,21 @@
 use crate::{
     memory,
     memory::{ReadMem, WriteMem},
+    BoxError,
 };
 use fastly_shared::FastlyStatus;
 use log::debug;
-use wasmtime::{Caller, Func, Store, Trap};
+use wasmtime::{Caller, Func, Linker, Store, Trap};
 use woothee::parser::{Parser, WootheeResult};
 
-pub fn parse(store: &Store) -> Func {
+pub fn add_to_linker<'a>(
+    linker: &'a mut Linker,
+    store: &Store,
+) -> Result<&'a mut Linker, BoxError> {
+    Ok(linker.define("fastly_uap", "parse", parse(&store))?)
+}
+
+fn parse(store: &Store) -> Func {
     Func::wrap(
         store,
         |caller: Caller<'_>,
