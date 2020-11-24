@@ -149,22 +149,23 @@ mod tests {
             };
     }
 
+    async fn body(resp: Response<Body>) -> Result<String, BoxError> {
+        Ok(str::from_utf8(&to_bytes(resp.into_body()).await?)?.to_owned())
+    }
+
     #[tokio::test]
     async fn it_works() -> Result<(), BoxError> {
         match WASM.as_ref() {
             None => Ok(()),
             Some((engine, module)) => {
-                let response = Handler::new(Request::default()).run(
+                let resp = Handler::new(Request::default()).run(
                     &module,
                     Store::new(&engine),
                     crate::backend::default(),
                     HashMap::default(),
                     "127.0.0.1".parse()?,
                 )?;
-                assert_eq!(
-                    "Welcome to Fastly Compute@Edge!",
-                    str::from_utf8(&to_bytes(response.into_body()).await?)?
-                );
+                assert_eq!("Welcome to Fastly Compute@Edge!", body(resp).await?);
                 Ok(())
             }
         }
@@ -184,13 +185,10 @@ mod tests {
                         &module,
                         Store::new(&engine),
                         crate::backend::default(),
-                        dictionaries.clone(),
+                        dictionaries,
                         "127.0.0.1".parse()?,
                     )?;
-                assert_eq!(
-                    "dict::foo is bar",
-                    str::from_utf8(&to_bytes(resp.into_body()).await?)?
-                );
+                assert_eq!("dict::foo is bar", body(resp).await?);
                 Ok(())
             }
         }
@@ -234,10 +232,7 @@ mod tests {
                     HashMap::default(),
                     "127.0.0.1".parse()?,
                 )?;
-                assert_eq!(
-                    "downstream_original_header_count 1",
-                    str::from_utf8(&to_bytes(resp.into_body()).await?)?
-                );
+                assert_eq!("downstream_original_header_count 1", body(resp).await?);
                 Ok(())
             }
         }
@@ -260,7 +255,7 @@ mod tests {
                 )?;
                 assert_eq!(
                     "downstream_client_ip_addr Some(V4(127.0.0.1))",
-                    str::from_utf8(&to_bytes(resp.into_body()).await?)?
+                    body(resp).await?
                 );
                 Ok(())
             }
