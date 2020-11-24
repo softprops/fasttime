@@ -17,7 +17,7 @@ pub fn add_to_linker<'a>(
     store: &Store,
 ) -> Result<&'a mut Linker, BoxError> {
     Ok(linker
-        .func("fastly_http_body", "close", || {
+        .func("fastly_http_body", "close", |_: BodyHandle| {
             debug!("fastly_http_body::close");
             FastlyStatus::OK.code
         })?
