@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
   push:
     paths-ignore:
-      - 'README.md'
+      - '*.md'
     branches:
       - main
   pull_request:
     paths-ignore:
-      - 'README.md'
+      - '*.md'
     branches:
       - main
 
