@@ -103,7 +103,10 @@ fn rewrite_uri(req: Request<hyper::Body>) -> Result<Request<hyper::Body>, BoxErr
     Ok(req)
 }
 
-fn load_module(engine: &Engine, file: impl AsRef<Path>) -> anyhow::Result<Module> {
+fn load_module(
+    engine: &Engine,
+    file: impl AsRef<Path>,
+) -> anyhow::Result<Module> {
     // Loading a module significant amount of time depending on the size
     // of the module but only needs to happen once per application
     println!("{}  Loading module...", " ◌".dimmed());
@@ -155,7 +158,12 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         let client_ip = conn.remote_addr().ip();
         async move {
             Ok::<_, anyhow::Error>(service_fn(move |req| {
-                let State { module, engine, backend, dictionary } = state.read().unwrap().clone();
+                let State {
+                    module,
+                    engine,
+                    backend,
+                    dictionary,
+                } = state.read().unwrap().clone();
                 async move {
                     Ok::<Response<hyper::Body>, anyhow::Error>(
                         spawn_blocking(move || {
@@ -208,26 +216,24 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
 
     // Unfortunately notify's watcher doesn't work with async channels, so let's
     // have a thread for the blocking read from that.
-    spawn_blocking(move || {
-        loop {
-            let event = rx.recv();
-            match &event {
-                Ok(DebouncedEvent::Chmod(path))
-                | Ok(DebouncedEvent::Create(path))
-                | Ok(DebouncedEvent::Rename(_, path))
-                | Ok(DebouncedEvent::Remove(path))
-                | Ok(DebouncedEvent::Write(path)) => {
-                    if *path == wasm {
-                        log::debug!("notify: {:?}", event.unwrap());
-                        if let Ok(module) = load_module(&engine, &wasm) {
-                            log::debug!("replacing module");
-                            state.write().unwrap().module = module;
-                        }
+    spawn_blocking(move || loop {
+        let event = rx.recv();
+        match &event {
+            Ok(DebouncedEvent::Chmod(path))
+            | Ok(DebouncedEvent::Create(path))
+            | Ok(DebouncedEvent::Rename(_, path))
+            | Ok(DebouncedEvent::Remove(path))
+            | Ok(DebouncedEvent::Write(path)) => {
+                if *path == wasm {
+                    log::debug!("notify: {:?}", event.unwrap());
+                    if let Ok(module) = load_module(&engine, &wasm) {
+                        log::debug!("replacing module");
+                        state.write().unwrap().module = module;
                     }
                 }
-                Err(e) => log::debug!("watch error: {:?}", e),
-                _ => (),
             }
+            Err(e) => log::debug!("watch error: {:?}", e),
+            _ => (),
         }
     });
 
