@@ -57,6 +57,16 @@ an HTTP client like `curl`
 curl -i "http://localhost:3000"
 ```
 
+#### ♻️ module hot reloading
+
+`fasttime` can monitor the provided wasm file for changes, and gracefully reload the module. Using the `--watch` flag, there's no
+need to restart `fasttime` after running `fastly compute build`!
+
+```sh
+$ fasttime -w target/wasm32-wasi/release/app.wasm \
+    --watch
+```
+
 #### ↔️ backends
 
 A common usecase for Fastly is proxying a set of backend hosts referred to by name. `fasttime` supports
@@ -101,11 +111,6 @@ Set the `RUST_LOG` env variable to `fastime=debug` and run the cli as usual
 ```
 RUST_LOG=fasttime=debug fasttime -w target/wasm32-wasi/release/app.wasm
 ```
-
-#### ♻️ module refresh
-
-`fasttime` will monitor the wasm file for changes, and gracefully reload the module. Meaning there's no
-need to restart `fasttime` after running `fastly compute build`!
 
 ## 🚧 roadmap
 
