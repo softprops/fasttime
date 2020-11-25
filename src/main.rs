@@ -39,6 +39,8 @@ use tokio::task::spawn_blocking;
 use wasmtime::{Engine, Module, Store};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
+type Backend = Vec<(String, String)>;
+type Dictionary = Vec<(String, HashMap<String, String>)>;
 
 fn parse_key_value<T, U>(s: &str) -> Result<(T, U), Box<dyn StdError>>
 where
@@ -69,7 +71,7 @@ fn parse_dictionary(s: &str) -> Result<(String, HashMap<String, String>), Box<dy
 /// ⏱️  A local Fastly Compute@Edge runtime emulator
 #[derive(Debug, StructOpt)]
 struct Opts {
-    /// Path to .wasm file
+    /// Path to a Fastly Compute@Edge .wasm file
     #[structopt(long, short, default_value = "bin/main.wasm")]
     wasm: PathBuf,
     /// Port to listen on
@@ -81,6 +83,9 @@ struct Opts {
     /// Edge dictionary in dictionary-name:key=value,key=value format
     #[structopt(long, short, parse(try_from_str = parse_dictionary))]
     dictionary: Vec<(String, HashMap<String, String>)>,
+    /// Watch for changes to .wasm file, reloading application when relevant
+    #[structopt(long)]
+    watch: bool,
 }
 
 // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
@@ -106,22 +111,25 @@ fn rewrite_uri(req: Request<hyper::Body>) -> Result<Request<hyper::Body>, BoxErr
 fn load_module(
     engine: &Engine,
     file: impl AsRef<Path>,
+    first_load: bool,
 ) -> anyhow::Result<Module> {
     // Loading a module significant amount of time depending on the size
     // of the module but only needs to happen once per application
-    println!("{}  Loading module...", " ◌".dimmed());
+    println!(
+        "{}  {}oading module...",
+        " ◌".dimmed(),
+        if first_load { "L" } else { "Rel" }
+    );
     let s = SystemTime::now();
     let module = Module::from_file(&engine, file)?;
     println!(
-        " {} Loaded module in {:?} ✨",
+        " {} {}oaded module in {:?} ✨",
         "✔".bold().green(),
+        if first_load { "L" } else { "Rel" },
         s.elapsed().unwrap_or_default()
     );
     Ok(module)
 }
-
-type Backend = Vec<(String, String)>;
-type Dictionary = Vec<(String, HashMap<String, String>)>;
 
 #[derive(Clone)]
 struct State {
@@ -137,17 +145,18 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         port,
         backend,
         dictionary,
+        watch,
     } = opts;
     let engine = Engine::default();
 
-    let module = load_module(&engine, &wasm)?;
+    let module = load_module(&engine, &wasm, true)?;
 
     let addr = ([127, 0, 0, 1], port).into();
     let state = State {
         module,
         engine: engine.clone(),
-        backend: backend.clone() as Backend,
-        dictionary: dictionary.clone() as Dictionary,
+        backend: backend.clone(),
+        dictionary: dictionary.clone(),
     };
     // Arc because we'll be using it in multiple threads, RwLock because we only
     // write to it when we're updating the module.
@@ -199,24 +208,42 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         }
     }
 
+    // assign to something to prevent watch resources from being dropped
+    let _watcher = if watch {
+        Some(monitor(&wasm, engine, state)?)
+    } else {
+        None
+    };
+
+    server.await?;
+
+    Ok(())
+}
+
+fn monitor(
+    wasm: &PathBuf,
+    engine: Engine,
+    state: Arc<RwLock<State>>,
+) -> Result<(notify::RecommendedWatcher, tokio::task::JoinHandle<()>), BoxError> {
     // For receiving events from notify's watcher
     let (tx, rx) = channel();
     // Create a watcher object, delivering debounced events. The Duration is how
     // long the watcher waits after each raw event to combine things into one
-    // debounced event. XXX: Make CLI option?
-    let mut watcher = watcher(tx, Duration::from_secs(1)).unwrap();
+    // debounced event.
+    let mut watcher = watcher(tx, Duration::from_secs(1))?;
 
     // Monitor the parent, because deleting the file removes the watch on some
     // platforms, but not all. So monitor the directory it's in, and then filter
     // for the specific file. Canonicalize because the watcher deals in absolute
     // paths. (Or at least it does on Linux.)
-    let wasm = fs::canonicalize(wasm).unwrap();
-    let wasmdir = &wasm.parent().unwrap();
-    watcher.watch(wasmdir, RecursiveMode::Recursive).unwrap();
+    let wasm = fs::canonicalize(wasm)?;
+    let wasmdir = &wasm.parent().expect("expected parent directory to exist");
+    println!(" Watching for changes...");
+    watcher.watch(wasmdir, RecursiveMode::Recursive)?;
 
     // Unfortunately notify's watcher doesn't work with async channels, so let's
     // have a thread for the blocking read from that.
-    spawn_blocking(move || loop {
+    let handle = spawn_blocking(move || loop {
         let event = rx.recv();
         match &event {
             Ok(DebouncedEvent::Chmod(path))
@@ -225,21 +252,23 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
             | Ok(DebouncedEvent::Remove(path))
             | Ok(DebouncedEvent::Write(path)) => {
                 if *path == wasm {
-                    log::debug!("notify: {:?}", event.unwrap());
-                    if let Ok(module) = load_module(&engine, &wasm) {
-                        log::debug!("replacing module");
-                        state.write().unwrap().module = module;
+                    log::trace!("notify: {:?}", event);
+                    if let Ok(module) = load_module(&engine, &wasm, false) {
+                        match state.write() {
+                            Ok(mut guard) => guard.module = module,
+                            _ => break,
+                        }
                     }
                 }
             }
-            Err(e) => log::debug!("watch error: {:?}", e),
+            Err(e) => {
+                log::trace!("watch error: {:?}", e);
+                break;
+            }
             _ => (),
         }
     });
-
-    server.await?;
-
-    Ok(())
+    Ok((watcher, handle))
 }
 
 #[tokio::main]
