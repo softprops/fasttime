@@ -79,10 +79,10 @@ struct Opts {
     port: u16,
     /// Backend to proxy in backend-name:host format (foo:foo.org)
     #[structopt(long, short, parse(try_from_str = parse_key_value))]
-    backend: Backend,
+    backend: Vec<(String, String)>,
     /// Edge dictionary in dictionary-name:key=value,key=value format
     #[structopt(long, short, parse(try_from_str = parse_dictionary))]
-    dictionary: Dictionary,
+    dictionary: Vec<(String, HashMap<String, String>)>,
     /// Watch for changes to .wasm file, reloading application when relevant
     #[structopt(long)]
     watch: bool,
