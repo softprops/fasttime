@@ -225,7 +225,7 @@ fn monitor(
     wasm: &PathBuf,
     engine: Engine,
     state: Arc<RwLock<State>>,
-) -> Result<(notify::FsEventWatcher, tokio::task::JoinHandle<()>), BoxError> {
+) -> Result<(notify::RecommendedWatcher, tokio::task::JoinHandle<()>), BoxError> {
     // For receiving events from notify's watcher
     let (tx, rx) = channel();
     // Create a watcher object, delivering debounced events. The Duration is how
