@@ -39,6 +39,8 @@ use tokio::task::spawn_blocking;
 use wasmtime::{Engine, Module, Store};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
+type Backend = Vec<(String, String)>;
+type Dictionary = Vec<(String, HashMap<String, String>)>;
 
 fn parse_key_value<T, U>(s: &str) -> Result<(T, U), Box<dyn StdError>>
 where
@@ -77,10 +79,10 @@ struct Opts {
     port: u16,
     /// Backend to proxy in backend-name:host format (foo:foo.org)
     #[structopt(long, short, parse(try_from_str = parse_key_value))]
-    backend: Vec<(String, String)>,
+    backend: Backend,
     /// Edge dictionary in dictionary-name:key=value,key=value format
     #[structopt(long, short, parse(try_from_str = parse_dictionary))]
-    dictionary: Vec<(String, HashMap<String, String>)>,
+    dictionary: Dictionary,
     /// Watch for changes to .wasm file, reloading application when relevant
     #[structopt(long)]
     watch: bool,
@@ -128,9 +130,6 @@ fn load_module(
     );
     Ok(module)
 }
-
-type Backend = Vec<(String, String)>;
-type Dictionary = Vec<(String, HashMap<String, String>)>;
 
 #[derive(Clone)]
 struct State {
