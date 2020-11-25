@@ -125,33 +125,8 @@ impl Handler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper::{body::to_bytes, Request};
-    use lazy_static::lazy_static;
-    use std::{path::Path, str};
-    use wasmtime::Engine;
-
-    lazy_static! {
-        static ref WASM: Option<(Engine, Module)> =
-            match Path::new("./tests/app/target/wasm32-wasi/release/app.wasm") {
-                path if !path.exists() => {
-                    pretty_env_logger::init();
-                    debug!("test wasm app is absent. will skip wasm tests");
-                    None
-                }
-                path => {
-                    pretty_env_logger::init();
-                    debug!("loading wasm for test");
-                    let engine = Engine::default();
-                    Module::from_file(&engine, path)
-                        .ok()
-                        .map(|module| (engine, module))
-                }
-            };
-    }
-
-    async fn body(resp: Response<Body>) -> Result<String, BoxError> {
-        Ok(str::from_utf8(&to_bytes(resp.into_body()).await?)?.to_owned())
-    }
+    use crate::tests::{body, WASM};
+    use hyper::Request;
 
     #[tokio::test]
     async fn it_works() -> Result<(), BoxError> {
@@ -166,121 +141,6 @@ mod tests {
                     "127.0.0.1".parse()?,
                 )?;
                 assert_eq!("Welcome to Fastly Compute@Edge!", body(resp).await?);
-                Ok(())
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn dictionary_hits_work() -> Result<(), BoxError> {
-        match WASM.as_ref() {
-            None => Ok(()),
-            Some((engine, module)) => {
-                let mut dictionaries = HashMap::new();
-                let mut dictionary = HashMap::new();
-                dictionary.insert("foo".to_string(), "bar".to_string());
-                dictionaries.insert("dict".to_string(), dictionary);
-                let resp = Handler::new(Request::get("/dictionary-hit").body(Default::default())?)
-                    .run(
-                        &module,
-                        Store::new(&engine),
-                        crate::backend::default(),
-                        dictionaries,
-                        "127.0.0.1".parse()?,
-                    )?;
-                assert_eq!("dict::foo is bar", body(resp).await?);
-                Ok(())
-            }
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn dictionary_misses_work() -> Result<(), BoxError> {
-        match WASM.as_ref() {
-            None => Ok(()),
-            Some((engine, module)) => {
-                match Handler::new(Request::get("/dictionary-miss").body(Default::default())?).run(
-                    &module,
-                    Store::new(&engine),
-                    crate::backend::default(),
-                    HashMap::default(),
-                    "127.0.0.1".parse()?,
-                ) {
-                    Ok(_) => panic!("expected error"),
-                    Err(e) => assert_eq!(e.to_string(), "test"),
-                }
-                Ok(())
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn downstream_original_header_count_works() -> Result<(), BoxError> {
-        match WASM.as_ref() {
-            None => Ok(()),
-            Some((engine, module)) => {
-                let resp = Handler::new(
-                    Request::get("/downstream_original_header_count")
-                        .header("foo", "bar")
-                        .body(Default::default())?,
-                )
-                .run(
-                    &module,
-                    Store::new(&engine),
-                    crate::backend::default(),
-                    HashMap::default(),
-                    "127.0.0.1".parse()?,
-                )?;
-                assert_eq!("downstream_original_header_count 1", body(resp).await?);
-                Ok(())
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn downstream_client_ip_addr_works() -> Result<(), BoxError> {
-        match WASM.as_ref() {
-            None => Ok(()),
-            Some((engine, module)) => {
-                let resp = Handler::new(
-                    Request::get("/downstream_client_ip_addr").body(Default::default())?,
-                )
-                .run(
-                    &module,
-                    Store::new(&engine),
-                    crate::backend::default(),
-                    HashMap::default(),
-                    "127.0.0.1".parse()?,
-                )?;
-                assert_eq!(
-                    "downstream_client_ip_addr Some(V4(127.0.0.1))",
-                    body(resp).await?
-                );
-                Ok(())
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_send_works() -> Result<(), BoxError> {
-        match WASM.as_ref() {
-            None => Ok(()),
-            Some((engine, module)) => {
-                let resp = Handler::new(
-                    Request::get("http://127.0.0.1:3000/backend").body(Default::default())?,
-                )
-                .run(
-                    &module,
-                    Store::new(&engine),
-                    Box::new(|backend: &str, _| {
-                        assert_eq!("backend_name", backend);
-                        Ok(Response::builder().body(Body::from("👋"))?)
-                    }),
-                    HashMap::default(),
-                    "127.0.0.1".parse()?,
-                )?;
-                assert_eq!("👋", body(resp).await?);
                 Ok(())
             }
         }

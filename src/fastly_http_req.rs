@@ -774,3 +774,82 @@ fn version_set(
         Ok(FastlyStatus::OK.code)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{body, WASM};
+    use hyper::Response;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn downstream_original_header_count_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("/downstream_original_header_count")
+                        .header("foo", "bar")
+                        .body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!("downstream_original_header_count 1", body(resp).await?);
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn downstream_client_ip_addr_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("/downstream_client_ip_addr").body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!(
+                    "downstream_client_ip_addr Some(V4(127.0.0.1))",
+                    body(resp).await?
+                );
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_send_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("http://127.0.0.1:3000/backend").body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    Box::new(|backend: &str, _| {
+                        assert_eq!("backend_name", backend);
+                        Ok(Response::builder().body(Body::from("👋"))?)
+                    }),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!("👋", body(resp).await?);
+                Ok(())
+            }
+        }
+    }
+}

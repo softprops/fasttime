@@ -106,3 +106,54 @@ fn get(
         },
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{body, WASM};
+    use hyper::Request;
+
+    #[tokio::test]
+    async fn hits_work() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let mut dictionaries = HashMap::new();
+                let mut dictionary = HashMap::new();
+                dictionary.insert("foo".to_string(), "bar".to_string());
+                dictionaries.insert("dict".to_string(), dictionary);
+                let resp = Handler::new(Request::get("/dictionary-hit").body(Default::default())?)
+                    .run(
+                        &module,
+                        Store::new(&engine),
+                        crate::backend::default(),
+                        dictionaries,
+                        "127.0.0.1".parse()?,
+                    )?;
+                assert_eq!("dict::foo is bar", body(resp).await?);
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn misses_work() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                match Handler::new(Request::get("/dictionary-miss").body(Default::default())?).run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                ) {
+                    Ok(_) => panic!("expected error"),
+                    Err(e) => assert_eq!(e.to_string(), "test"),
+                }
+                Ok(())
+            }
+        }
+    }
+}

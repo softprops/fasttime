@@ -283,6 +283,30 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hyper::body::{to_bytes, Body};
+
+    lazy_static::lazy_static! {
+        pub (crate) static ref WASM: Option<(Engine, Module)> =
+            match Path::new("./tests/app/target/wasm32-wasi/release/app.wasm") {
+                path if !path.exists() => {
+                    pretty_env_logger::init();
+                    log::debug!("test wasm app is absent. will skip wasm tests");
+                    None
+                }
+                path => {
+                    pretty_env_logger::init();
+                    log::debug!("loading wasm for test");
+                    let engine = Engine::default();
+                    Module::from_file(&engine, path)
+                        .ok()
+                        .map(|module| (engine, module))
+                }
+            };
+    }
+
+    pub(crate) async fn body(resp: Response<Body>) -> Result<String, BoxError> {
+        Ok(std::str::from_utf8(&to_bytes(resp.into_body()).await?)?.to_owned())
+    }
 
     #[test]
     fn test_rewrite_uri() -> Result<(), BoxError> {
