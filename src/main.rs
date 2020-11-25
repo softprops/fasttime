@@ -195,7 +195,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     let (tx, rx) = channel();
     // Create a watcher object, delivering debounced events. The Duration is how
     // long the watcher waits after each raw event to combine things into one
-    // debouced event. XXX: Make CLI option?
+    // debounced event. XXX: Make CLI option?
     let mut watcher = watcher(tx, Duration::from_secs(1)).unwrap();
 
     // Monitor the parent, because deleting the file removes the watch on some
