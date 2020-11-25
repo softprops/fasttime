@@ -237,7 +237,7 @@ fn monitor(
     // for the specific file. Canonicalize because the watcher deals in absolute
     // paths. (Or at least it does on Linux.)
     let wasm = fs::canonicalize(wasm)?;
-    let wasmdir = &wasm.parent().unwrap();
+    let wasmdir = &wasm.parent().expect("expected parent directory to exist");
     println!(" Watching for changes...");
     watcher.watch(wasmdir, RecursiveMode::Recursive)?;
 
@@ -252,9 +252,12 @@ fn monitor(
             | Ok(DebouncedEvent::Remove(path))
             | Ok(DebouncedEvent::Write(path)) => {
                 if *path == wasm {
-                    log::trace!("notify: {:?}", event.unwrap());
+                    log::trace!("notify: {:?}", event);
                     if let Ok(module) = load_module(&engine, &wasm, false) {
-                        state.write().unwrap().module = module;
+                        match state.write() {
+                            Ok(mut guard) => guard.module = module,
+                            _ => break,
+                        }
                     }
                 }
             }
