@@ -67,6 +67,14 @@ $ fasttime -w target/wasm32-wasi/release/app.wasm \
     --watch
 ```
 
+This pairs well with a `cargo watch` workflow. In another terminal, run
+
+```sh
+$ cargo +1.46.0 watch -x 'build --release --target wasm32-wasi'
+```
+
+You can then make changes to your application in your text editor, have cargo automatically rebuild your application, and have `fasttime` automatically reload it
+
 #### ↔️ backends
 
 A common usecase for Fastly is proxying a set of backend hosts referred to by name. `fasttime` supports
