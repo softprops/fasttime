@@ -102,10 +102,14 @@ Set the `RUST_LOG` env variable to `fastime=debug` and run the cli as usual
 RUST_LOG=fasttime=debug fasttime -w target/wasm32-wasi/release/app.wasm
 ```
 
+#### ♻️ module refresh
+
+`fasttime` will monitor the wasm file for changes, and gracefully reload the module. Meaning there's no
+need to restart `fasttime` after running `fastly compute build`!
+
 ## 🚧 roadmap
 
 * tls support
 * support config file based configuration
-* hot reloading of wasm file
 
 Doug Tangren (softprops) 2020
