@@ -23,13 +23,16 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Server,
 };
+use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::{
     collections::HashMap,
     error::{Error, Error as StdError},
-    path::PathBuf,
+    fs,
+    path::{Path, PathBuf},
     process::exit,
     str::FromStr,
-    time::SystemTime,
+    sync::{mpsc::channel, Arc, RwLock},
+    time::{Duration, SystemTime},
 };
 use structopt::StructOpt;
 use tokio::task::spawn_blocking;
@@ -100,6 +103,31 @@ fn rewrite_uri(req: Request<hyper::Body>) -> Result<Request<hyper::Body>, BoxErr
     Ok(req)
 }
 
+fn load_module(engine: &Engine, file: impl AsRef<Path>) -> anyhow::Result<Module> {
+    // Loading a module significant amount of time depending on the size
+    // of the module but only needs to happen once per application
+    println!("{}  Loading module...", " ◌".dimmed());
+    let s = SystemTime::now();
+    let module = Module::from_file(&engine, file)?;
+    println!(
+        " {} Loaded module in {:?} ✨",
+        "✔".bold().green(),
+        s.elapsed().unwrap_or_default()
+    );
+    Ok(module)
+}
+
+type Backend = Vec<(String, String)>;
+type Dictionary = Vec<(String, HashMap<String, String>)>;
+
+#[derive(Clone)]
+struct State {
+    module: Module,
+    engine: Engine,
+    backend: Backend,
+    dictionary: Dictionary,
+}
+
 async fn run(opts: Opts) -> Result<(), BoxError> {
     let Opts {
         wasm,
@@ -109,25 +137,25 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     } = opts;
     let engine = Engine::default();
 
-    // Loading a module significant amount of time depending on the size
-    // of the module but only needs to happen once per application
-    println!("{}  Loading module...", " ◌".dimmed());
-    let s = SystemTime::now();
-    let module = Module::from_file(&engine, wasm)?;
-    println!(
-        " {} Loaded module in {:?} ✨",
-        "✔".bold().green(),
-        s.elapsed().unwrap_or_default()
-    );
+    let module = load_module(&engine, &wasm)?;
 
     let addr = ([127, 0, 0, 1], port).into();
-    let state = (module, engine, backend.clone(), dictionary.clone());
+    let state = State {
+        module,
+        engine: engine.clone(),
+        backend: backend.clone() as Backend,
+        dictionary: dictionary.clone() as Dictionary,
+    };
+    // Arc because we'll be using it in multiple threads, RwLock because we only
+    // write to it when we're updating the module.
+    let state = Arc::new(RwLock::new(state));
+    let moved_state = state.clone();
     let server = Server::try_bind(&addr)?.serve(make_service_fn(move |conn: &AddrStream| {
-        let state = state.clone();
+        let state = moved_state.clone();
         let client_ip = conn.remote_addr().ip();
         async move {
             Ok::<_, anyhow::Error>(service_fn(move |req| {
-                let (module, engine, backend, dictionary) = state.clone();
+                let State { module, engine, backend, dictionary } = state.read().unwrap().clone();
                 async move {
                     Ok::<Response<hyper::Body>, anyhow::Error>(
                         spawn_blocking(move || {
@@ -162,6 +190,46 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
             println!("     {} > {}", name, host);
         }
     }
+
+    // For receiving events from notify's watcher
+    let (tx, rx) = channel();
+    // Create a watcher object, delivering debounced events. The Duration is how
+    // long the watcher waits after each raw event to combine things into one
+    // debouced event. XXX: Make CLI option?
+    let mut watcher = watcher(tx, Duration::from_secs(1)).unwrap();
+
+    // Monitor the parent, because deleting the file removes the watch on some
+    // platforms, but not all. So monitor the directory it's in, and then filter
+    // for the specific file. Canonicalize because the watcher deals in absolute
+    // paths. (Or at least it does on Linux.)
+    let wasm = fs::canonicalize(wasm).unwrap();
+    let wasmdir = &wasm.parent().unwrap();
+    watcher.watch(wasmdir, RecursiveMode::Recursive).unwrap();
+
+    // Unfortunately notify's watcher doesn't work with async channels, so let's
+    // have a thread for the blocking read from that.
+    spawn_blocking(move || {
+        loop {
+            let event = rx.recv();
+            match &event {
+                Ok(DebouncedEvent::Chmod(path))
+                | Ok(DebouncedEvent::Create(path))
+                | Ok(DebouncedEvent::Rename(_, path))
+                | Ok(DebouncedEvent::Remove(path))
+                | Ok(DebouncedEvent::Write(path)) => {
+                    if *path == wasm {
+                        log::debug!("notify: {:?}", event.unwrap());
+                        if let Ok(module) = load_module(&engine, &wasm) {
+                            log::debug!("replacing module");
+                            state.write().unwrap().module = module;
+                        }
+                    }
+                }
+                Err(e) => log::debug!("watch error: {:?}", e),
+                _ => (),
+            }
+        }
+    });
 
     server.await?;
 
