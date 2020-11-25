@@ -29,69 +29,8 @@ pub fn add_to_linker<'a>(
     Ok(linker
         .define(
             "fastly_http_req",
-            "original_header_count",
-            original_header_count(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
             "body_downstream_get",
             body_downstream_get(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "downstream_client_ip_addr",
-            downstream_client_ip_addr(handler.clone(), &store, ip),
-        )?
-        .define("fastly_http_req", "new", new(handler.clone(), &store))?
-        .define(
-            "fastly_http_req",
-            "version_get",
-            version_get(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "version_set",
-            version_set(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "method_get",
-            method_get(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "method_set",
-            method_set(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "uri_get",
-            uri_get(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "uri_set",
-            uri_set(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "header_names_get",
-            header_names_get(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "header_values_get",
-            header_values_get(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "header_values_set",
-            header_values_set(handler.clone(), &store),
-        )?
-        .define(
-            "fastly_http_req",
-            "send",
-            send(handler.clone(), &store, backends),
         )?
         .define(
             "fastly_http_req",
@@ -105,8 +44,125 @@ pub fn add_to_linker<'a>(
         )?
         .define(
             "fastly_http_req",
+            "downstream_client_ip_addr",
+            downstream_client_ip_addr(handler.clone(), &store, ip),
+        )?
+        .func(
+            "fastly_http_req",
+            "downstream_tls_cipher_openssl_name",
+            |_cipher_out: i32, _cipher_max_len: i32, _nwritten: i32| {
+                debug!("fastly_http_req::downstream_tls_cipher_openssl_name (stub)");
+                FastlyStatus::UNSUPPORTED.code
+            },
+        )?
+        .func(
+            "fastly_http_req",
+            "downstream_tls_client_hello",
+            |_client_hello_out: i32, _client_hello_max_len: i32, _nwritten: i32| {
+                debug!("fastly_http_req::downstream_tls_client_hello (stub)");
+                FastlyStatus::UNSUPPORTED.code
+            },
+        )?
+        .func(
+            "fastly_http_req",
+            "downstream_tls_protocol",
+            |_protocol_out: i32, _protocol_max_len: i32, _nwritten: i32| {
+                debug!("fastly_http_req::downstream_tls_protocol (stub)");
+                FastlyStatus::UNSUPPORTED.code
+            },
+        )?
+        .func(
+            "fastly_http_req",
+            "header_append",
+            |_req_handle: RequestHandle,
+             _name: i32,
+             _name_len: i32,
+             _value: i32,
+             _value_len: i32| {
+                debug!("fastly_http_req::header_append (stub)");
+                FastlyStatus::UNSUPPORTED.code
+            },
+        )?
+        .func(
+            "fastly_http_req",
+            "header_insert",
+            |_req_handle: RequestHandle,
+             _name: i32,
+             _name_len: i32,
+             _value: i32,
+             _value_len: i32| {
+                debug!("fastly_http_req::header_insert (stub)");
+                FastlyStatus::UNSUPPORTED.code
+            },
+        )?
+        .define(
+            "fastly_http_req",
+            "header_names_get",
+            header_names_get(handler.clone(), &store),
+        )?
+        .func(
+            "fastly_http_req",
+            "header_remove",
+            |_req_handle: RequestHandle, _name: i32, _name_len: i32| {
+                debug!("fastly_http_req::header_remove (stub)");
+                FastlyStatus::UNSUPPORTED.code
+            },
+        )?
+        .define(
+            "fastly_http_req",
+            "header_values_get",
+            header_values_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "header_values_set",
+            header_values_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "method_get",
+            method_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "method_set",
+            method_set(handler.clone(), &store),
+        )?
+        .define("fastly_http_req", "new", new(handler.clone(), &store))?
+        .define(
+            "fastly_http_req",
+            "original_header_count",
+            original_header_count(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
             "original_header_names_get",
             original_header_names_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "send",
+            send(handler.clone(), &store, backends),
+        )?
+        .define(
+            "fastly_http_req",
+            "uri_get",
+            uri_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "uri_set",
+            uri_set(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "version_get",
+            version_get(handler.clone(), &store),
+        )?
+        .define(
+            "fastly_http_req",
+            "version_set",
+            version_set(handler, &store),
         )?)
 }
 
@@ -187,7 +243,7 @@ fn original_header_count(
             "fastly_http_req::original_header_count count_out={}",
             count_out
         );
-        let count = handler
+        let count: i32 = match handler
             .inner
             .borrow()
             .request
@@ -201,8 +257,13 @@ fn original_header_count(
                     .first()
                     .map(|r| r.headers.len())
             })
-            .unwrap_or_default();
-        memory!(caller).write_i32(count_out, count as i32);
+            .unwrap_or_default()
+        {
+            value if value < 1 => -1,
+            value => value as i32,
+        };
+        debug!("fastly_http_req::original_header_count count => {}", count);
+        memory!(caller).write_i32(count_out, count);
         Ok(FastlyStatus::OK.code)
     })
 }
@@ -712,4 +773,83 @@ fn version_set(
 
         Ok(FastlyStatus::OK.code)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{body, WASM};
+    use hyper::Response;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn downstream_original_header_count_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("/downstream_original_header_count")
+                        .header("foo", "bar")
+                        .body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!("downstream_original_header_count 1", body(resp).await?);
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn downstream_client_ip_addr_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("/downstream_client_ip_addr").body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!(
+                    "downstream_client_ip_addr Some(V4(127.0.0.1))",
+                    body(resp).await?
+                );
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_send_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("http://127.0.0.1:3000/backend").body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    Box::new(|backend: &str, _| {
+                        assert_eq!("backend_name", backend);
+                        Ok(Response::builder().body(Body::from("👋"))?)
+                    }),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!("👋", body(resp).await?);
+                Ok(())
+            }
+        }
+    }
 }

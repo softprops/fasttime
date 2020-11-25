@@ -19,13 +19,9 @@ pub fn add_to_linker<'a>(
         .define(
             "fastly_log",
             "endpoint_get",
-            crate::fastly_log::endpoint_get(handler.clone(), &store),
+            endpoint_get(handler.clone(), &store),
         )?
-        .define(
-            "fastly_log",
-            "write",
-            crate::fastly_log::write(handler, &store),
-        )?)
+        .define("fastly_log", "write", write(handler, &store))?)
 }
 
 fn endpoint_get(

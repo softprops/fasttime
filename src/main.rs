@@ -28,17 +28,19 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Server,
 };
+use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use rustls::internal::pemfile;
 use std::{
     collections::HashMap,
     error::{Error, Error as StdError},
     fs, io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     pin::Pin,
     process::exit,
     str::FromStr,
     sync,
-    time::SystemTime,
+    sync::{mpsc::channel, Arc, RwLock},
+    time::{Duration, SystemTime},
 };
 use structopt::StructOpt;
 use tokio::{
@@ -49,6 +51,8 @@ use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use wasmtime::{Engine, Module, Store};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
+type Backend = Vec<(String, String)>;
+type Dictionary = Vec<(String, HashMap<String, String>)>;
 
 fn parse_key_value<T, U>(s: &str) -> Result<(T, U), Box<dyn StdError>>
 where
@@ -79,7 +83,7 @@ fn parse_dictionary(s: &str) -> Result<(String, HashMap<String, String>), Box<dy
 /// ⏱️  A local Fastly Compute@Edge runtime emulator
 #[derive(Debug, StructOpt)]
 struct Opts {
-    /// Path to .wasm file
+    /// Path to a Fastly Compute@Edge .wasm file
     #[structopt(long, short, default_value = "bin/main.wasm")]
     wasm: PathBuf,
     /// Port to listen on
@@ -95,6 +99,9 @@ struct Opts {
     tls_cert: Option<PathBuf>,
     #[structopt(long)]
     tls_key: Option<PathBuf>,
+    /// Watch for changes to .wasm file, reloading application when relevant
+    #[structopt(long)]
+    watch: bool,
 }
 
 // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
@@ -138,6 +145,37 @@ impl hyper::server::accept::Accept for HyperAcceptor<'_> {
     }
 }
 
+fn load_module(
+    engine: &Engine,
+    file: impl AsRef<Path>,
+    first_load: bool,
+) -> anyhow::Result<Module> {
+    // Loading a module significant amount of time depending on the size
+    // of the module but only needs to happen once per application
+    println!(
+        "{}  {}oading module...",
+        " ◌".dimmed(),
+        if first_load { "L" } else { "Rel" }
+    );
+    let s = SystemTime::now();
+    let module = Module::from_file(&engine, file)?;
+    println!(
+        " {} {}oaded module in {:?} ✨",
+        "✔".bold().green(),
+        if first_load { "L" } else { "Rel" },
+        s.elapsed().unwrap_or_default()
+    );
+    Ok(module)
+}
+
+#[derive(Clone)]
+struct State {
+    module: Module,
+    engine: Engine,
+    backend: Backend,
+    dictionary: Dictionary,
+}
+
 async fn run(opts: Opts) -> Result<(), BoxError> {
     let Opts {
         wasm,
@@ -146,22 +184,20 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         dictionary,
         tls_cert,
         tls_key,
+        watch,
     } = opts;
     let engine = Engine::default();
 
-    // Loading a module significant amount of time depending on the size
-    // of the module but only needs to happen once per application
-    println!("{}  Loading module...", " ◌".dimmed());
-    let s = SystemTime::now();
-    let module = Module::from_file(&engine, wasm)?;
-    println!(
-        " {} Loaded module in {:?} ✨",
-        "✔".bold().green(),
-        s.elapsed().unwrap_or_default()
-    );
+    let module = load_module(&engine, &wasm, true)?;
 
     let addr = ([127, 0, 0, 1], port).into();
-    let state = (module, engine, backend.clone(), dictionary.clone());
+    let state = Arc::new(RwLock::new(State {
+        module,
+        engine: engine.clone(),
+        backend: backend.clone(),
+        dictionary: dictionary.clone(),
+    }));
+    let moved_state = state.clone();
 
     match (tls_cert, tls_key) {
         (Some(cert), Some(key)) => {
@@ -200,7 +236,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                 acceptor: incoming_tls_stream,
             })
             .serve(make_service_fn(move |conn: &TlsStream<TcpStream>| {
-                let state = state.clone();
+                let state = moved_state.clone();
                 let client_ip = conn
                     .get_ref()
                     .0
@@ -209,7 +245,13 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                     .ip();
                 async move {
                     Ok::<_, anyhow::Error>(service_fn(move |req| {
-                        let (module, engine, backend, dictionary) = state.clone();
+                        let State {
+                            module,
+                            engine,
+                            backend,
+                            dictionary,
+                        } = state.read().unwrap().clone();
+
                         async move {
                             Ok::<Response<hyper::Body>, anyhow::Error>(
                                 spawn_blocking(move || {
@@ -254,11 +296,16 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         _ => {
             let server =
                 Server::try_bind(&addr)?.serve(make_service_fn(move |conn: &AddrStream| {
-                    let state = state.clone();
+                    let state = moved_state.clone();
                     let client_ip = conn.remote_addr().ip();
                     async move {
                         Ok::<_, anyhow::Error>(service_fn(move |req| {
-                            let (module, engine, backend, dictionary) = state.clone();
+                            let State {
+                                module,
+                                engine,
+                                backend,
+                                dictionary,
+                            } = state.read().unwrap().clone();
                             async move {
                                 Ok::<Response<hyper::Body>, anyhow::Error>(
                                     spawn_blocking(move || {
@@ -302,9 +349,65 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         }
     };
 
-    // server.await?;
+    // assign to something to prevent watch resources from being dropped
+    let _watcher = if watch {
+        Some(monitor(&wasm, engine, state)?)
+    } else {
+        None
+    };
 
     Ok(())
+}
+
+fn monitor(
+    wasm: &PathBuf,
+    engine: Engine,
+    state: Arc<RwLock<State>>,
+) -> Result<(notify::RecommendedWatcher, tokio::task::JoinHandle<()>), BoxError> {
+    // For receiving events from notify's watcher
+    let (tx, rx) = channel();
+    // Create a watcher object, delivering debounced events. The Duration is how
+    // long the watcher waits after each raw event to combine things into one
+    // debounced event.
+    let mut watcher = watcher(tx, Duration::from_secs(1))?;
+
+    // Monitor the parent, because deleting the file removes the watch on some
+    // platforms, but not all. So monitor the directory it's in, and then filter
+    // for the specific file. Canonicalize because the watcher deals in absolute
+    // paths. (Or at least it does on Linux.)
+    let wasm = fs::canonicalize(wasm)?;
+    let wasmdir = &wasm.parent().expect("expected parent directory to exist");
+    println!(" Watching for changes...");
+    watcher.watch(wasmdir, RecursiveMode::Recursive)?;
+
+    // Unfortunately notify's watcher doesn't work with async channels, so let's
+    // have a thread for the blocking read from that.
+    let handle = spawn_blocking(move || loop {
+        let event = rx.recv();
+        match &event {
+            Ok(DebouncedEvent::Chmod(path))
+            | Ok(DebouncedEvent::Create(path))
+            | Ok(DebouncedEvent::Rename(_, path))
+            | Ok(DebouncedEvent::Remove(path))
+            | Ok(DebouncedEvent::Write(path)) => {
+                if *path == wasm {
+                    log::trace!("notify: {:?}", event);
+                    if let Ok(module) = load_module(&engine, &wasm, false) {
+                        match state.write() {
+                            Ok(mut guard) => guard.module = module,
+                            _ => break,
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::trace!("watch error: {:?}", e);
+                break;
+            }
+            _ => (),
+        }
+    });
+    Ok((watcher, handle))
 }
 
 #[tokio::main]
@@ -319,6 +422,30 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hyper::body::{to_bytes, Body};
+
+    lazy_static::lazy_static! {
+        pub (crate) static ref WASM: Option<(Engine, Module)> =
+            match Path::new("./tests/app/target/wasm32-wasi/release/app.wasm") {
+                path if !path.exists() => {
+                    pretty_env_logger::init();
+                    log::debug!("test wasm app is absent. will skip wasm tests");
+                    None
+                }
+                path => {
+                    pretty_env_logger::init();
+                    log::debug!("loading wasm for test");
+                    let engine = Engine::default();
+                    Module::from_file(&engine, path)
+                        .ok()
+                        .map(|module| (engine, module))
+                }
+            };
+    }
+
+    pub(crate) async fn body(resp: Response<Body>) -> Result<String, BoxError> {
+        Ok(std::str::from_utf8(&to_bytes(resp.into_body()).await?)?.to_owned())
+    }
 
     #[test]
     fn test_rewrite_uri_http() -> Result<(), BoxError> {

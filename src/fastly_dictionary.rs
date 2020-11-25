@@ -6,7 +6,7 @@ use crate::{
 };
 use fastly_shared::FastlyStatus;
 use log::debug;
-use std::collections::HashMap;
+use std::{collections::HashMap, str};
 use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 type DictionaryHandle = i32;
@@ -35,22 +35,29 @@ fn open(
     Func::wrap(
         &store,
         move |caller: Caller<'_>, addr: i32, len: i32, dict_out: DictionaryHandle| {
-            debug!("fastly_dictionary::open");
+            debug!(
+                "fastly_dictionary::open addr={} len={} dict_out={}",
+                addr, len, dict_out
+            );
             let mut memory = memory!(caller);
-            let (_, buf) = match memory!(caller).read(addr, len) {
+            let (_, buf) = match memory.read(addr, len) {
                 Ok(result) => result,
                 _ => return Err(Trap::new("failed to read dictionary name")),
             };
-            let name = std::str::from_utf8(&buf).unwrap();
-            debug!("opening dictionary {}", name);
-            let index = handler.inner.borrow().dictionaries.len();
-            handler
-                .inner
-                .borrow_mut()
-                .dictionaries
-                .push(dictionaries.get(name).cloned().unwrap_or_default());
-            memory.write_i32(dict_out, index as i32);
-            Ok(FastlyStatus::OK.code)
+            let name = str::from_utf8(&buf).expect("utf8");
+            match dictionaries.get(name) {
+                Some(dict) => {
+                    debug!("fastly_dictionary::open opening dictionary {}", name);
+                    let index = handler.inner.borrow().dictionaries.len();
+                    handler.inner.borrow_mut().dictionaries.push(dict.clone());
+                    memory.write_i32(dict_out, index as i32);
+                    Ok(FastlyStatus::OK.code)
+                }
+                _ => {
+                    debug!("fastly_dictionary::open no dictionary named {}", name);
+                    Err(Trap::i32_exit(FastlyStatus::INVAL.code))
+                }
+            }
         },
     )
 }
@@ -98,4 +105,55 @@ fn get(
             Ok(FastlyStatus::OK.code)
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{body, WASM};
+    use hyper::Request;
+
+    #[tokio::test]
+    async fn hits_work() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let mut dictionaries = HashMap::new();
+                let mut dictionary = HashMap::new();
+                dictionary.insert("foo".to_string(), "bar".to_string());
+                dictionaries.insert("dict".to_string(), dictionary);
+                let resp = Handler::new(Request::get("/dictionary-hit").body(Default::default())?)
+                    .run(
+                        &module,
+                        Store::new(&engine),
+                        crate::backend::default(),
+                        dictionaries,
+                        "127.0.0.1".parse()?,
+                    )?;
+                assert_eq!("dict::foo is bar", body(resp).await?);
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn misses_work() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                match Handler::new(Request::get("/dictionary-miss").body(Default::default())?).run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                ) {
+                    Ok(_) => panic!("expected error"),
+                    Err(e) => assert_eq!(e.to_string(), "test"),
+                }
+                Ok(())
+            }
+        }
+    }
 }

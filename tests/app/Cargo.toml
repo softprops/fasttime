@@ -1,0 +1,12 @@
+[package]
+name = "app"
+version = "0.1.0"
+authors = []
+edition = "2018"
+
+[profile.release]
+debug = true
+lto = true
+
+[dependencies]
+fastly = "^0.5.0"

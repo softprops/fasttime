@@ -57,8 +57,29 @@ jobs:
       #     key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo check --all
 
-  test:
+  build-example:
     needs: [codestyle, lint, compile]
+    name: Build example wasm app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set up Rust
+        uses: hecrj/setup-rust-action@v1
+        with:
+            targets: wasm32-wasi
+            rust-version: "1.46.0"
+      - name: Build
+        working-directory: tests/app
+        run: cargo build --release --target wasm32-wasi
+      - name: Upload wasm
+        uses: actions/upload-artifact@v1
+        with:
+            name: wasm-module
+            path: tests/app/target/wasm32-wasi/release/app.wasm
+
+  test:
+    needs: [build-example]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
@@ -72,6 +93,11 @@ jobs:
         rust-version: ${{ matrix.rust }}
     - name: Checkout
       uses: actions/checkout@v2
+    - name: Download wasm
+      uses: actions/download-artifact@v1
+      with:
+          name: wasm-module
+          path: tests/app/target/wasm32-wasi/release
     # - uses: actions/cache@v2
     #   with:
     #     path: |

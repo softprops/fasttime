@@ -106,21 +106,16 @@ impl Handler {
 
         // fill in the [`fastly-sys`](https://crates.io/crates/fastly-sys) funcs
 
-        linker.func("fastly_abi", "init", |version: i32| {
+        linker.func("fastly_abi", "init", |version: i64| {
             debug!("fastly_abi::init version={}", version);
             FastlyStatus::OK.code
         })?;
 
-        linker.define("fastly_uap", "parse", crate::fastly_uap::parse(&store))?;
-
+        crate::fastly_uap::add_to_linker(&mut linker, &store)?;
         crate::fastly_dictionary::add_to_linker(&mut linker, self.clone(), &store, dictionaries)?;
-
         crate::fastly_http_body::add_to_linker(&mut linker, self.clone(), &store)?;
-
         crate::fastly_log::add_to_linker(&mut linker, self.clone(), &store)?;
-
         crate::fastly_http_req::add_to_linker(&mut linker, self.clone(), &store, backends, ip)?;
-
         crate::fastly_http_resp::add_to_linker(&mut linker, self.clone(), &store)?;
 
         Ok(linker)
@@ -130,32 +125,24 @@ impl Handler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::{body, WASM};
     use hyper::Request;
-    use std::path::Path;
-    use wasmtime::Engine;
 
     #[tokio::test]
     async fn it_works() -> Result<(), BoxError> {
-        if !Path::new("./tests/app/bin/main.wasm").exists() {
-            return Ok(());
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(Request::default()).run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!("Welcome to Fastly Compute@Edge!", body(resp).await?);
+                Ok(())
+            }
         }
-        // todo create one eng/module for all tests
-        let engine = Engine::default();
-        let module = Module::from_file(&engine, "./tests/app/bin/main.wasm")?;
-
-        let response = Handler::new(Request::default()).run(
-            &module,
-            Store::new(&engine),
-            crate::backend::default(),
-            HashMap::default(),
-            "127.0.0.1".parse()?,
-        )?;
-        println!("{:?}", response.status());
-        let bytes = hyper::body::to_bytes(response.into_body()).await?;
-        assert_eq!(
-            "Welcome to Fastly Compute@Edge!",
-            std::str::from_utf8(&bytes)?
-        );
-        Ok(())
     }
 }
