@@ -261,4 +261,28 @@ mod tests {
             }
         }
     }
+
+    #[tokio::test]
+    async fn test_send_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("http://127.0.0.1:3000/backend").body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    Box::new(|backend: &str, _| {
+                        assert_eq!("backend_name", backend);
+                        Ok(Response::builder().body(Body::from("👋"))?)
+                    }),
+                    HashMap::default(),
+                    "127.0.0.1".parse()?,
+                )?;
+                assert_eq!("👋", body(resp).await?);
+                Ok(())
+            }
+        }
+    }
 }
