@@ -17,6 +17,7 @@ jobs:
   codestyle:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
       - uses: actions/cache@v2
         with:
           path: |
@@ -29,12 +30,12 @@ jobs:
         with:
           components: rustfmt
           rust-version: nightly
-      - uses: actions/checkout@v2
       - run: cargo fmt --all -- --check
 
   lint:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
       - uses: actions/cache@v2
         with:
           path: |
@@ -46,12 +47,12 @@ jobs:
         uses: hecrj/setup-rust-action@v1
         with:
           components: clippy
-      - uses: actions/checkout@v2
       - run: cargo clippy --all-targets --all-features -- -D clippy::all
 
   compile:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
       - uses: actions/cache@v2
         with:
           path: |
@@ -61,7 +62,6 @@ jobs:
           key: ${{ runner.os }}-stable-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Set up Rust
         uses: hecrj/setup-rust-action@v1
-      - uses: actions/checkout@v2
       - run: cargo check --all
 
   build-example:
@@ -69,6 +69,7 @@ jobs:
     name: Build example wasm app
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
       - uses: actions/cache@v2
         with:
           path: |
@@ -76,8 +77,6 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-1.46.0-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Checkout
-        uses: actions/checkout@v2
       - name: Set up Rust
         uses: hecrj/setup-rust-action@v1
         with:
@@ -101,6 +100,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+    - name: Checkout
+      uses: actions/checkout@v2
     - uses: actions/cache@v2
       with:
         path: |
@@ -112,8 +113,6 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
-    - name: Checkout
-      uses: actions/checkout@v2
     - name: Download wasm
       uses: actions/download-artifact@v1
       with:
