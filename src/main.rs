@@ -33,12 +33,12 @@ use rustls::internal::pemfile;
 use std::{
     collections::HashMap,
     error::{Error, Error as StdError},
-    fs, io,
+    fs::File,
+    io::BufReader,
     path::{Path, PathBuf},
     pin::Pin,
     process::exit,
     str::FromStr,
-    sync,
     sync::{mpsc::channel, Arc, RwLock},
     time::{Duration, SystemTime},
 };
@@ -176,6 +176,23 @@ struct State {
     dictionary: Dictionary,
 }
 
+fn tls_config(
+    cert: impl AsRef<Path>,
+    key: impl AsRef<Path>,
+) -> Result<rustls::ServerConfig, BoxError> {
+    let certs = pemfile::certs(&mut BufReader::new(File::open(cert)?));
+    let key = pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(key)?));
+    let mut cfg = rustls::ServerConfig::new(rustls::NoClientAuth::new());
+    cfg.set_single_cert(
+        certs.map_err(|_| anyhow!("unable to load tls certificate"))?,
+        key.map_err(|_| anyhow!("unable to load tls private key"))?[0].clone(),
+    )
+    .map_err(|e| anyhow!(e.to_string()))?;
+    // Configure ALPN to accept HTTP/2, HTTP/1.1 in that order.
+    cfg.set_protocols(&[b"h2".to_vec(), b"http/1.1".to_vec()]);
+    Ok(cfg)
+}
+
 async fn run(opts: Opts) -> Result<(), BoxError> {
     let Opts {
         wasm,
@@ -198,163 +215,152 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         dictionary: dictionary.clone(),
     }));
     let moved_state = state.clone();
-
-    match (tls_cert, tls_key) {
-        (Some(cert), Some(key)) => {
-            let tls_cfg = {
-                let certs = pemfile::certs(&mut io::BufReader::new(fs::File::open(cert)?));
-                let key =
-                    pemfile::pkcs8_private_keys(&mut io::BufReader::new(fs::File::open(key)?));
-                let mut cfg = rustls::ServerConfig::new(rustls::NoClientAuth::new());
-                cfg.set_single_cert(
-                    certs.map_err(|_| anyhow!("unable to load tls certificate"))?,
-                    key.map_err(|_| anyhow!("unable to load tls private key"))?[0].clone(),
-                )
-                .map_err(|e| anyhow!(format!("{}", e)))?;
-                // Configure ALPN to accept HTTP/2, HTTP/1.1 in that order.
-                cfg.set_protocols(&[b"h2".to_vec(), b"http/1.1".to_vec()]);
-                sync::Arc::new(cfg)
-            };
-            let mut tcp = TcpListener::bind(&addr).await?;
-            let tls_acceptor = TlsAcceptor::from(tls_cfg);
-            // Prepare a long-running future stream to accept and serve cients.
-            let incoming_tls_stream = tcp
-                .incoming()
-                .map_err(|e| anyhow!(format!("Incoming tpc request failed: {}", e)))
-                .and_then(move |s| {
-                    tls_acceptor
-                        .accept(s)
-                        .map_err(|e| anyhow!(format!("TLS Error: {:?}", e)))
-                })
-                .filter(|res| {
-                    // Ignore failed accepts
-                    ready(res.is_ok())
-                })
-                .boxed();
-
-            let server = Server::builder(HyperAcceptor {
-                acceptor: incoming_tls_stream,
-            })
-            .serve(make_service_fn(move |conn: &TlsStream<TcpStream>| {
-                let state = moved_state.clone();
-                let client_ip = conn
-                    .get_ref()
-                    .0
-                    .peer_addr()
-                    .expect("Unable to client network address")
-                    .ip();
-                async move {
-                    Ok::<_, anyhow::Error>(service_fn(move |req| {
-                        let State {
-                            module,
-                            engine,
-                            backend,
-                            dictionary,
-                        } = state.read().unwrap().clone();
-
-                        async move {
-                            Ok::<Response<hyper::Body>, anyhow::Error>(
-                                spawn_blocking(move || {
-                                    Handler::new(
-                                        rewrite_uri(req, Scheme::HTTPS).expect("invalid uri"),
-                                    )
-                                    .run(
-                                        &module,
-                                        Store::new(&engine),
-                                        if backend.is_empty() {
-                                            backend::default()
-                                        } else {
-                                            Box::new(backend::Proxy::new(
-                                                backend.into_iter().collect(),
-                                            ))
-                                        },
-                                        dictionary.into_iter().collect(),
-                                        client_ip,
-                                    )
-                                    .map_err(|e| {
-                                        log::debug!("Handler::run error: {}", e);
-                                        anyhow!(e.to_string())
-                                    })
-                                })
-                                .await??,
-                            )
-                        }
-                    }))
-                }
-            }));
-
-            println!(" {} Listening on https://{}", "●".bold().green(), addr);
-            if !backend.is_empty() {
-                println!("   {} Backends", "❯".dimmed());
-                for (name, host) in backend {
-                    println!("     {} > {}", name, host);
-                }
-            }
-
-            server.await?
-        }
-        _ => {
-            let server =
-                Server::try_bind(&addr)?.serve(make_service_fn(move |conn: &AddrStream| {
-                    let state = moved_state.clone();
-                    let client_ip = conn.remote_addr().ip();
-                    async move {
-                        Ok::<_, anyhow::Error>(service_fn(move |req| {
-                            let State {
-                                module,
-                                engine,
-                                backend,
-                                dictionary,
-                            } = state.read().unwrap().clone();
+    let server: Box<dyn std::future::Future<Output = hyper::Result<()>> + std::marker::Unpin> =
+        match (tls_cert, tls_key) {
+            (Some(cert), Some(key)) => {
+                let tls_acceptor = TlsAcceptor::from(Arc::new(tls_config(cert, key)?));
+                let mut tcp = TcpListener::bind(&addr).await?;
+                let acceptor = tcp
+                    .incoming()
+                    .map_err(|e| anyhow!(format!("Incoming tpc request failed: {}", e)))
+                    .and_then(move |s| {
+                        tls_acceptor
+                            .accept(s)
+                            .map_err(|e| anyhow!(format!("TLS Error: {:?}", e)))
+                    })
+                    .filter(|res| {
+                        // Ignore failed accepts
+                        ready(res.is_ok())
+                    })
+                    .boxed();
+                Box::new(
+                    Server::builder(HyperAcceptor { acceptor }).serve(make_service_fn(
+                        move |conn: &TlsStream<TcpStream>| {
+                            let state = moved_state.clone();
+                            let client_ip = conn
+                                .get_ref()
+                                .0
+                                .peer_addr()
+                                .expect("Unable to client network address")
+                                .ip();
                             async move {
-                                Ok::<Response<hyper::Body>, anyhow::Error>(
-                                    spawn_blocking(move || {
-                                        Handler::new(
-                                            rewrite_uri(req, Scheme::HTTP).expect("invalid uri"),
+                                Ok::<_, anyhow::Error>(service_fn(move |req| {
+                                    let State {
+                                        module,
+                                        engine,
+                                        backend,
+                                        dictionary,
+                                    } = state.read().unwrap().clone();
+
+                                    async move {
+                                        Ok::<Response<hyper::Body>, anyhow::Error>(
+                                            spawn_blocking(move || {
+                                                Handler::new(
+                                                    rewrite_uri(req, Scheme::HTTPS)
+                                                        .expect("invalid uri"),
+                                                )
+                                                .run(
+                                                    &module,
+                                                    Store::new(&engine),
+                                                    if backend.is_empty() {
+                                                        backend::default()
+                                                    } else {
+                                                        Box::new(backend::Proxy::new(
+                                                            backend.into_iter().collect(),
+                                                        ))
+                                                    },
+                                                    dictionary.into_iter().collect(),
+                                                    client_ip,
+                                                )
+                                                .map_err(|e| {
+                                                    log::debug!("Handler::run error: {}", e);
+                                                    anyhow!(e.to_string())
+                                                })
+                                            })
+                                            .await??,
                                         )
-                                        .run(
-                                            &module,
-                                            Store::new(&engine),
-                                            if backend.is_empty() {
-                                                backend::default()
-                                            } else {
-                                                Box::new(backend::Proxy::new(
-                                                    backend.into_iter().collect(),
-                                                ))
-                                            },
-                                            dictionary.into_iter().collect(),
-                                            client_ip,
-                                        )
-                                        .map_err(|e| {
-                                            log::debug!("Handler::run error: {}", e);
-                                            anyhow!(e.to_string())
-                                        })
-                                    })
-                                    .await??,
-                                )
+                                    }
+                                }))
                             }
-                        }))
-                    }
-                }));
+                        },
+                    )))//.await?
 
-            println!(" {} Listening on http://{}", "●".bold().green(), addr);
-            if !backend.is_empty() {
-                println!("   {} Backends", "❯".dimmed());
-                for (name, host) in backend {
-                    println!("     {} > {}", name, host);
-                }
+                // println!(" {} Listening on https://{}", "●".bold().green(), addr);
+                // if !backend.is_empty() {
+                //     println!("   {} Backends", "❯".dimmed());
+                //     for (name, host) in backend {
+                //         println!("     {} > {}", name, host);
+                //     }
+                // }
+
+                // server.await?
             }
+            _ => {
+                Box::new(Server::try_bind(&addr)?.serve(make_service_fn(
+                    move |conn: &AddrStream| {
+                        let state = moved_state.clone();
+                        let client_ip = conn.remote_addr().ip();
+                        async move {
+                            Ok::<_, anyhow::Error>(service_fn(move |req| {
+                                let State {
+                                    module,
+                                    engine,
+                                    backend,
+                                    dictionary,
+                                } = state.read().expect("unable to lock server state").clone();
+                                async move {
+                                    Ok::<Response<hyper::Body>, anyhow::Error>(
+                                        spawn_blocking(move || {
+                                            Handler::new(
+                                                rewrite_uri(req, Scheme::HTTP)
+                                                    .expect("invalid uri"),
+                                            )
+                                            .run(
+                                                &module,
+                                                Store::new(&engine),
+                                                if backend.is_empty() {
+                                                    backend::default()
+                                                } else {
+                                                    Box::new(backend::Proxy::new(
+                                                        backend.into_iter().collect(),
+                                                    ))
+                                                },
+                                                dictionary.into_iter().collect(),
+                                                client_ip,
+                                            )
+                                            .map_err(
+                                                |e| {
+                                                    log::debug!("Handler::run error: {}", e);
+                                                    anyhow!(e.to_string())
+                                                },
+                                            )
+                                        })
+                                        .await??,
+                                    )
+                                }
+                            }))
+                        }
+                    },
+                )))//.await?
 
-            server.await?
-        }
-    };
+                // println!(" {} Listening on http://{}", "●".bold().green(), addr);
+                // if !backend.is_empty() {
+                //     println!("   {} Backends", "❯".dimmed());
+                //     for (name, host) in backend {
+                //         println!("     {} > {}", name, host);
+                //     }
+                // }
+            }
+        };
 
     // assign to something to prevent watch resources from being dropped
-    let _watcher = if watch {
-        Some(monitor(&wasm, engine, state)?)
-    } else {
-        None
-    };
+    // let _watcher = if watch {
+    //     Some(monitor(&wasm, engine, state)?)
+    // } else {
+    //     None
+    // };
+
+    // server.await?;
 
     Ok(())
 }
