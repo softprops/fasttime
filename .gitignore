@@ -1,7 +1,5 @@
 /target
-<<<<<<< HEAD
 tests/app
 cert.pem
 key.pem
-=======
->>>>>>> b35ce2ce62eb85f8277fe2a3a5e36ff6d37e125e
+
