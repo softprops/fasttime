@@ -1,3 +1,5 @@
+//! Defines interfaces for working with WASM application's memory
+
 use byteorder::{ByteOrder, LittleEndian};
 use std::io::{self, Read, Write};
 use wasmtime::Memory;
@@ -8,7 +10,7 @@ macro_rules! memory {
     ($expr:expr) => {
         match $expr.get_export("memory") {
             Some(::wasmtime::Extern::Memory(mem)) => mem,
-            _ => return Err(Trap::new("failed to resolve exported host memory")),
+            _ => return Err(::wasmtime::Trap::new("failed to resolve exported host memory")),
         };
     };
 }

@@ -19,7 +19,7 @@
 
 ## about
 
-Fastly allows you to run WASM request handlers within a WASI-based runtime hosted on its managed edge servers. `fasttime` implements those runtime interfaces using [wasmtime](https://wasmtime.dev/) served up your application on a local HTTP server allowing you to run you Compute@Edge applications ✨ locally on your laptop ✨.
+Fastly allows you to run WASM request handlers within a WASI-based runtime hosted on its managed edge servers. `fasttime` implements those runtime interfaces using [wasmtime](https://wasmtime.dev/) serving up your application on a local HTTP server allowing you to run you Compute@Edge applications ✨ locally on your laptop ✨.
 
 ## 🤸 usage
 

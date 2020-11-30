@@ -1,3 +1,5 @@
+//! Defines an HTTP request handling interface 
+
 use crate::BoxError;
 use bytes::BytesMut;
 use fastly_shared::FastlyStatus;
