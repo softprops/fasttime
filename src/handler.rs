@@ -1,4 +1,5 @@
 use crate::BoxError;
+use bytes::BytesMut;
 use fastly_shared::FastlyStatus;
 use http::{request::Parts as RequestParts, response::Parts as ResponseParts};
 use hyper::{Body, Request, Response};
@@ -32,7 +33,7 @@ pub struct Inner {
     /// responses from the requests initiated within the handler
     pub responses: Vec<ResponseParts>,
     /// bodies created within the handler
-    pub bodies: Vec<Body>,
+    pub bodies: Vec<BytesMut>,
     /// final handler response
     pub response: Response<Body>,
     /// list of loaded dictionaries

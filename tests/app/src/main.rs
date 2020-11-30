@@ -59,6 +59,15 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
         (&Method::GET, "/") => Ok(Response::builder()
             .status(StatusCode::OK)
             .body(Body::from("Welcome to Fastly Compute@Edge!"))?),
+        (&Method::GET, "/stream") => {
+            let mut body = Body::from("Welcome to Fastly Compute@Edge!");
+            let body2 = Body::from("Appended welcome to Fastly Compute@Edge!");
+            body.append(body2);
+            body.write_str("last line");
+            Ok(Response::builder()
+            .status(StatusCode::OK)
+            .body(body)?)
+        },
         (&Method::GET, "/downstream_original_header_count") => Ok(Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .body(Body::from(format!(
