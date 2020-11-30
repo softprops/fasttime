@@ -284,6 +284,7 @@ async fn main() {
 mod tests {
     use super::*;
     use hyper::body::{to_bytes, Body};
+    use std::str;
 
     lazy_static::lazy_static! {
         pub (crate) static ref WASM: Option<(Engine, Module)> =
@@ -305,7 +306,7 @@ mod tests {
     }
 
     pub(crate) async fn body(resp: Response<Body>) -> Result<String, BoxError> {
-        Ok(std::str::from_utf8(&to_bytes(resp.into_body()).await?)?.to_owned())
+        Ok(str::from_utf8(&to_bytes(resp.into_body()).await?)?.to_owned())
     }
 
     #[test]
@@ -313,7 +314,7 @@ mod tests {
         let req = Request::builder()
             .uri("/foo")
             .header(HOST, "fasttime.co")
-            .body(hyper::Body::empty())?;
+            .body(Body::empty())?;
         let rewritten = rewrite_uri(req)?;
         assert_eq!(
             rewritten.uri().authority(),
