@@ -178,7 +178,7 @@ mod tests {
                         Ok(Response::builder().body(Body::from("👋"))?)
                     }),
                     HashMap::default(),
-                    "127.0.0.1".parse()?,
+                    "127.0.0.1".parse().ok(),
                 )?;
                 assert_eq!("Welcome to Fastly Compute@Edge!Appended welcome to Fastly Compute@Edge!last line", body(resp).await?);
                 Ok(())

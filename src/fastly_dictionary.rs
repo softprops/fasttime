@@ -128,7 +128,7 @@ mod tests {
                         Store::new(&engine),
                         crate::backend::default(),
                         dictionaries,
-                        "127.0.0.1".parse()?,
+                        "127.0.0.1".parse().ok(),
                     )?;
                 assert_eq!("dict::foo is bar", body(resp).await?);
                 Ok(())
@@ -147,7 +147,7 @@ mod tests {
                     Store::new(&engine),
                     crate::backend::default(),
                     HashMap::default(),
-                    "127.0.0.1".parse()?,
+                    "127.0.0.1".parse().ok(),
                 ) {
                     Ok(_) => panic!("expected error"),
                     Err(e) => assert_eq!(e.to_string(), "test"),

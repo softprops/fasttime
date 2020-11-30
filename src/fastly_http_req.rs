@@ -811,7 +811,7 @@ mod tests {
                     Store::new(&engine),
                     crate::backend::default(),
                     HashMap::default(),
-                    "127.0.0.1".parse()?,
+                    "127.0.0.1".parse().ok(),
                 )?;
                 assert_eq!("downstream_original_header_count 1", body(resp).await?);
                 Ok(())
@@ -859,7 +859,7 @@ mod tests {
                         Ok(Response::builder().body(Body::from("👋"))?)
                     }),
                     HashMap::default(),
-                    "127.0.0.1".parse()?,
+                    "127.0.0.1".parse().ok(),
                 )?;
                 assert_eq!("👋", body(resp).await?);
                 Ok(())

@@ -141,7 +141,7 @@ mod tests {
                     Store::new(&engine),
                     crate::backend::default(),
                     HashMap::default(),
-                    "127.0.0.1".parse()?,
+                    "127.0.0.1".parse().ok(),
                 )?;
                 assert_eq!("Welcome to Fastly Compute@Edge!", body(resp).await?);
                 Ok(())
