@@ -86,7 +86,8 @@ fn send_downstream(
                 .responses
                 .remove(whandle as usize);
             let body = handler.inner.borrow_mut().bodies.remove(bhandle as usize);
-            handler.inner.borrow_mut().response = Response::from_parts(parts, body);
+            handler.inner.borrow_mut().response =
+                Response::from_parts(parts, Body::from(body.to_vec()));
 
             FastlyStatus::OK.code
         },

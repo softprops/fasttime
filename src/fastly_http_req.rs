@@ -8,8 +8,10 @@ use crate::{
     memory::{ReadMem, WriteMem},
     BoxError,
 };
+use bytes::BytesMut;
 use fastly_shared::{FastlyStatus, HttpVersion};
 use hyper::{
+    body::to_bytes,
     header::{HeaderName, HeaderValue},
     Body, Method, Request, Uri,
 };
@@ -289,7 +291,9 @@ fn body_downstream_get(
                 .into_parts();
             debug!("fastly_http_req::body_downstream_get {:?}", parts);
             handler.inner.borrow_mut().requests.push(parts);
-            handler.inner.borrow_mut().bodies.push(body);
+            handler.inner.borrow_mut().bodies.push(BytesMut::from(
+                futures_executor::block_on(to_bytes(body)).unwrap().as_ref(),
+            ));
 
             let mut mem = memory!(caller);
             mem.write_i32(request_handle_out, index as i32);
@@ -467,7 +471,7 @@ fn send(
                 .borrow_mut()
                 .bodies
                 .remove(body_handle as usize);
-            let req = Request::from_parts(parts, body);
+            let req = Request::from_parts(parts, Body::from(body.to_vec()));
             let (parts, body) = match backend {
                 "geolocation" => geo::GeoBackend(Box::new(geo::Geo::default()))
                     .send(backend, req)
@@ -480,7 +484,9 @@ fn send(
             };
 
             handler.inner.borrow_mut().responses.push(parts);
-            handler.inner.borrow_mut().bodies.push(body);
+            handler.inner.borrow_mut().bodies.push(BytesMut::from(
+                futures_executor::block_on(to_bytes(body)).unwrap().as_ref(),
+            ));
 
             memory.write_i32(
                 resp_handle_out,
