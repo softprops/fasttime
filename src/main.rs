@@ -41,7 +41,7 @@ use rustls::internal::pemfile;
 use std::{
     collections::HashMap,
     error::{Error, Error as StdError},
-    fs::File,
+    fs::{self, File},
     io::BufReader,
     path::{Path, PathBuf},
     pin::Pin,
