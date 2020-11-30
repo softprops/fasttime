@@ -225,7 +225,6 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     }));
     let moved_state = state.clone();
 
-    /* let server: Box<dyn std::future::Future<Output = hyper::Result<()>> + std::marker::Unpin> = */
     match (tls_cert, tls_key) {
         (Some(cert), Some(key)) => {
             let tls_acceptor = TlsAcceptor::from(Arc::new(tls_config(cert, key)?));
