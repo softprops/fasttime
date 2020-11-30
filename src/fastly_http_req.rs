@@ -26,7 +26,7 @@ pub fn add_to_linker<'a>(
     handler: Handler,
     store: &Store,
     backends: Box<dyn crate::Backends>,
-    ip: IpAddr,
+    ip: Option<IpAddr>,
 ) -> Result<&'a mut Linker, BoxError> {
     Ok(linker
         .define(
@@ -305,7 +305,7 @@ fn body_downstream_get(
 fn downstream_client_ip_addr(
     _handler: Handler,
     store: &Store,
-    ip: IpAddr,
+    ip: Option<IpAddr>,
 ) -> Func {
     Func::wrap(
         &store,
@@ -315,18 +315,24 @@ fn downstream_client_ip_addr(
                 "fastly_http_req::downstream_client_ip_addr addr={} num_written={}",
                 addr, num_written
             );
-            debug!(
-                "fastly_http_req::downstream_client_ip_addr => {}",
-                ip.to_string()
-            );
-            let bytes = match ip {
-                IpAddr::V4(ip) => ip.octets().to_vec(),
-                IpAddr::V6(ip) => ip.octets().to_vec(),
-            };
-            match memory.write(addr, &bytes) {
-                Ok(written) => memory.write_i32(num_written, written as i32),
-                _ => return Err(Trap::new("failed to write ip address")),
+            match ip {
+                Some(ip) => {
+                    debug!(
+                        "fastly_http_req::downstream_client_ip_addr => {}",
+                        ip.to_string()
+                    );
+                    let bytes = match ip {
+                        IpAddr::V4(ip) => ip.octets().to_vec(),
+                        IpAddr::V6(ip) => ip.octets().to_vec(),
+                    };
+                    match memory.write(addr, &bytes) {
+                        Ok(written) => memory.write_i32(num_written, written as i32),
+                        _ => return Err(Trap::new("failed to write ip address")),
+                    }
+                }
+                _ => memory.write_i32(num_written, 0),
             }
+
             Ok(FastlyStatus::OK.code)
         },
     )
@@ -826,7 +832,7 @@ mod tests {
                     Store::new(&engine),
                     crate::backend::default(),
                     HashMap::default(),
-                    "127.0.0.1".parse()?,
+                    "127.0.0.1".parse().ok(),
                 )?;
                 assert_eq!(
                     "downstream_client_ip_addr Some(V4(127.0.0.1))",

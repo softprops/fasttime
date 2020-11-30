@@ -245,12 +245,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
             let server = Box::new(Server::builder(HyperAcceptor { acceptor }).serve(
                 make_service_fn(move |conn: &TlsStream<TcpStream>| {
                     let state = moved_state.clone();
-                    let client_ip = conn
-                        .get_ref()
-                        .0
-                        .peer_addr()
-                        .expect("Unable to client network address")
-                        .ip();
+                    let client_ip = conn.get_ref().0.peer_addr().ok().map(|addr| addr.ip());
                     async move {
                         Ok::<_, anyhow::Error>(service_fn(move |req| {
                             let State {
@@ -312,7 +307,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
             let server = Box::new(Server::try_bind(&addr)?.serve(make_service_fn(
                 move |conn: &AddrStream| {
                     let state = moved_state.clone();
-                    let client_ip = conn.remote_addr().ip();
+                    let client_ip = Some(conn.remote_addr().ip());
                     async move {
                         Ok::<_, anyhow::Error>(service_fn(move |req| {
                             let State {

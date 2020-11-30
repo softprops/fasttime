@@ -72,7 +72,7 @@ impl Handler {
         store: Store,
         backends: Box<dyn crate::Backends>,
         dicionaries: HashMap<String, HashMap<String, String>>,
-        ip: IpAddr,
+        ip: Option<IpAddr>,
     ) -> Result<Response<Body>, BoxError> {
         if let Some(func) = self
             .linker(store, backends, dicionaries, ip)?
@@ -93,7 +93,7 @@ impl Handler {
         store: Store,
         backends: Box<dyn crate::Backends>,
         dictionaries: HashMap<String, HashMap<String, String>>,
-        ip: IpAddr,
+        ip: Option<IpAddr>,
     ) -> Result<Linker, BoxError> {
         let wasi = Wasi::new(
             &store,
