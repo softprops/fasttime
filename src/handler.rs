@@ -1,4 +1,4 @@
-//! Defines an HTTP request handling interface 
+//! Defines an HTTP request handling interface
 
 use crate::BoxError;
 use bytes::BytesMut;
