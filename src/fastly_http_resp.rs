@@ -86,7 +86,8 @@ fn send_downstream(
                 .responses
                 .remove(whandle as usize);
             let body = handler.inner.borrow_mut().bodies.remove(bhandle as usize);
-            handler.inner.borrow_mut().response = Response::from_parts(parts, body);
+            handler.inner.borrow_mut().response =
+                Response::from_parts(parts, Body::from(body.to_vec()));
 
             FastlyStatus::OK.code
         },
@@ -162,29 +163,27 @@ fn header_names_get(
                     names.sort_unstable();
                     let mut memory = memory!(caller);
                     let ucursor = cursor as usize;
-
-                    if ucursor >= names.len() {
-                        memory.write_i32(nwritten_out, 0);
-                        memory.write_i32(ending_cursor_out, -1);
-                        return Ok(FastlyStatus::OK.code);
+                    match names.get(ucursor) {
+                        Some(hdr) => {
+                            let mut bytes = hdr.as_bytes().to_vec();
+                            bytes.push(0); // api requires a terminating \x00 byte
+                            let written = memory.write(addr, &bytes).unwrap();
+                            memory.write_i32(nwritten_out, written as i32);
+                            memory.write_i32(
+                                ending_cursor_out,
+                                if ucursor < names.len() - 1 {
+                                    cursor + 1 as i32
+                                } else {
+                                    -1 as i32
+                                },
+                            );
+                        }
+                        _ => {
+                            memory.write_i32(nwritten_out, 0);
+                            memory.write_i32(ending_cursor_out, -1);
+                            return Ok(FastlyStatus::OK.code);
+                        }
                     }
-                    debug!(
-                        "fastly_http_req::header_names_get {:?} ({})",
-                        names.get(ucursor),
-                        ucursor
-                    );
-                    let mut bytes = names.get(ucursor).unwrap().as_bytes().to_vec();
-                    bytes.push(0); // api requires a terminating \x00 byte
-                    let written = memory.write(addr, &bytes).unwrap();
-                    memory.write_i32(nwritten_out, written as i32);
-                    memory.write_i32(
-                        ending_cursor_out,
-                        if ucursor < names.len() - 1 {
-                            cursor + 1 as i32
-                        } else {
-                            -1 as i32
-                        },
-                    );
                 }
                 _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
             }
@@ -233,23 +232,27 @@ fn header_values_get(
                     values.sort();
 
                     let ucursor = cursor as usize;
-                    if ucursor >= values.len() {
-                        memory.write_i32(nwritten_out, 0);
-                        memory.write_i32(ending_cursor_out, -1);
-                        return Ok(FastlyStatus::OK.code);
+                    match values.get(ucursor) {
+                        Some(val) => {
+                            let mut bytes = val.to_vec();
+                            bytes.push(0); // api requires a terminating \x00 byte
+                            let written = memory.write(addr, &bytes).unwrap();
+                            memory.write_i32(nwritten_out, written as i32);
+                            memory.write_i32(
+                                ending_cursor_out,
+                                if ucursor < values.len() - 1 {
+                                    cursor + 1 as i32
+                                } else {
+                                    -1 as i32
+                                },
+                            );
+                        }
+                        _ => {
+                            memory.write_i32(nwritten_out, 0);
+                            memory.write_i32(ending_cursor_out, -1);
+                            return Ok(FastlyStatus::OK.code);
+                        }
                     }
-                    let mut bytes = values.get(ucursor).unwrap().to_vec();
-                    bytes.push(0); // api requires a terminating \x00 byte
-                    let written = memory.write(addr, &bytes).unwrap();
-                    memory.write_i32(nwritten_out, written as i32);
-                    memory.write_i32(
-                        ending_cursor_out,
-                        if ucursor < values.len() - 1 {
-                            cursor + 1 as i32
-                        } else {
-                            -1 as i32
-                        },
-                    );
                 }
                 _ => return Err(Trap::i32_exit(FastlyStatus::BADF.code)),
             }

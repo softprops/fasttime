@@ -1,3 +1,5 @@
+//! Defines interfaces looking up client's geographic information
+
 use crate::BoxError;
 use hyper::{Body, Request, Response};
 use serde::Serialize;

@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-   A lightweight Fastly <a alt="GitHub Actions" href="https://www.fastly.com/products/edge-compute/serverless/">Compute@Edge</a> runtime for running wasm applications locally
+   A lightweight Fastly <a alt="GitHub Actions" href="https://www.fastly.com/products/edge-compute/serverless/">Compute@Edge</a> runtime for running and testing <a alt="wasm" href="https://webassembly.org/">WASM</a> applications locally
 </p>
 
 <div align="center">
@@ -19,9 +19,7 @@
 
 ## about
 
-Fastly allows you to run WASM request within a WASI-based runtime on its edge servers. `fasttime` implements those
-runtime interfaces using [wasmtime](https://wasmtime.dev/) served on a local HTTP server allowing you to run you Compute@Edge applications ✨ locally
-on your laptop ✨.
+Fastly allows you to run WASM request handlers within a WASI-based runtime hosted on its managed edge servers. `fasttime` implements those runtime interfaces using [wasmtime](https://wasmtime.dev/) serving up your application on a local HTTP server allowing you to run you Compute@Edge applications ✨ locally on your laptop ✨.
 
 ## 🤸 usage
 
@@ -33,7 +31,9 @@ The fastest way to get started with [Compute@Edge](https://www.fastly.com/produc
 $ fastly compute build
 ```
 
-If you do not have Fastly CLI, you can also build with the standard cargo tooling. Fastly assumes a Rust toolchain version of `1.46.0`
+Alternatively, you can also build your WASM application using Rust's standard cargo tooling. 
+
+> Fastly assumes a Rust toolchain version of `1.46.0`
 
 ```sh
 # optionally install the wasm32 toolchain if you have not done so already
@@ -57,10 +57,9 @@ an HTTP client like `curl`
 curl -i "http://localhost:3000"
 ```
 
-#### ♻️ module hot reloading
+#### ♻️ hot reloading
 
-`fasttime` can monitor the provided wasm file for changes, and gracefully reload the module. Using the `--watch` flag, there's no
-need to restart `fasttime` after running `fastly compute build`!
+`fasttime` can monitor your WASM applicaion for changes, and gracefully reload the module when needed allowing for live-editing. Using the `--watch` flag, there's no need to restart `fasttime` after running `fastly compute build`!
 
 ```sh
 $ fasttime -w target/wasm32-wasi/release/app.wasm \
@@ -73,7 +72,7 @@ This pairs well with a `cargo watch` workflow. In another terminal, run
 $ cargo +1.46.0 watch -x 'build --release --target wasm32-wasi'
 ```
 
-You can then make changes to your application in your text editor, have cargo automatically rebuild your application, and have `fasttime` automatically reload it
+You can then make changes to your application in your text editor, have cargo automatically rebuild your application, and have `fasttime` automatically reload it as you develop your application
 
 #### ↔️ backends
 
@@ -89,8 +88,7 @@ $ fasttime -w target/wasm32-wasi/release/app.wasm \
 
 #### 📚 dictionaries
 
-A common way to store lookup information in Fastly is to use [edge dictionaries](https://docs.fastly.com/en/guides/about-edge-dictionaries). `fasttime` supports
-providing multiple `-d | --dictionary` flags with values of the form `{dictionary}:{key}={value},{key2}={value2}`. 
+A common way to look up key-value'd information in Fastly is to use [edge dictionaries](https://docs.fastly.com/en/guides/about-edge-dictionaries). `fasttime` supports providing multiple `-d | --dictionary` flags with values of the form `{dictionary}:{key}={value},{key2}={value2}`. 
 
 ```sh
 $ fasttime -w target/wasm32-wasi/release/app.wasm \

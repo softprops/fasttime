@@ -1,9 +1,10 @@
+//! Defines interfaces for responding to backend requests
+
 use crate::BoxError;
 use hyper::{http::HeaderValue, Body, Request, Response};
 use log::debug;
 use reqwest::Client;
 use std::collections::HashMap;
-
 pub trait Backends: 'static {
     fn send(
         &self,
