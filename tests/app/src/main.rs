@@ -56,18 +56,14 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
     // Pattern match on the request method and path.
     match (req.method(), req.uri().path()) {
         // If request is a `GET` to the `/` path, send a default response.
-        (&Method::GET, "/") => Ok(Response::builder()
-            .status(StatusCode::OK)
-            .body(Body::from("Welcome to Fastly Compute@Edge!"))?),
+        (&Method::GET, "/") => Ok(Response::new("Welcome to Fastly Compute@Edge!".into())),
         (&Method::GET, "/stream") => {
             let mut body = Body::from("Welcome to Fastly Compute@Edge!");
             let body2 = Body::from("Appended welcome to Fastly Compute@Edge!");
             body.append(body2);
             body.write_str("last line");
-            Ok(Response::builder()
-            .status(StatusCode::OK)
-            .body(body)?)
-        },
+            Ok(Response::new(body))
+        }
         (&Method::GET, "/downstream_original_header_count") => Ok(Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .body(Body::from(format!(
@@ -81,17 +77,11 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
                 fastly::downstream_client_ip_addr()
             )))?),
         (&Method::GET, "/dictionary-hit") => match Dictionary::open("dict").get("foo") {
-            Some(foo) => Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from(format!("dict::foo is {}", foo)))?),
-            _ => Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("dict::foo is unknown"))?),
+            Some(foo) => Ok(Response::new(format!("dict::foo is {}", foo).into())),
+            _ => Ok(Response::new("dict::foo is unknown".into())),
         },
         (&Method::GET, "/dictionary-miss") => match Dictionary::open("bogus").get("foo") {
-            Some(foo) => Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from(format!("bogus::foo is {}", foo)))?),
+            Some(foo) => Ok(Response::new(format!("bogus::foo is {}", foo).into())),
             _ => Ok(Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body(Body::from("dict::foo is unknown"))?),
@@ -100,9 +90,7 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
         (&Method::GET, "/geo") => {
             let client_ip = fastly::downstream_client_ip_addr().unwrap();
             let geo = fastly::geo::geo_lookup(client_ip);
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from(format!("ip {} {:?}", client_ip, geo)))?)
+            Ok(Response::new(format!("ip {} {:?}", client_ip, geo).into()))
         }
 
         // If request is a `GET` to the `/backend` path, send to a named backend.
