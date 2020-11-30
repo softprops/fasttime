@@ -110,19 +110,20 @@ writeln!(endpoint, "hello {}", "wasm");
 
 `fasttime` currently support these by logging directly to stdout by default.
 
-### tls
+### 🤝 tls
 
-Using [mkcert](https://github.com/FiloSottile/mkcert), create a new tls certificate and private key
+Using a tls certificate making tool like [mkcert](https://github.com/FiloSottile/mkcert), create a new tls certificate and private key
 
 ```sh
 mkcert -key-file key.pem -cert-file cert.pem 127.0.0.1 localhost
 ```
 
+Then provide `--tls-cert` with a tls certifificate and `--tls-key` and tls private key to `fasttime`
 
 ```sh
 $ fasttime -w target/wasm32-wasi/release/app.wasm \
-    -tls-cert=./cert.pem \
-    -tls-cert=./key.pem
+    --tls-cert=./cert.pem \
+    --tls-key=./key.pem
 ```
 
 #### 🔍 debugging
