@@ -6,7 +6,7 @@ use crate::{
 use fastly_shared::FastlyStatus;
 use log::debug;
 use wasmtime::{Caller, Func, Linker, Store, Trap};
-//use woothee::parser::{Parser, WootheeResult};
+use std::str;
 use user_agent_parser::{Product, UserAgentParser};
 
 lazy_static::lazy_static! {
@@ -41,7 +41,7 @@ fn parse(store: &Store) -> Func {
             debug!("fastly_uap::parse");
             let mut memory = memory!(caller);
             match memory.read(user_agent, user_agent_max_len) {
-                Ok((_, bytes)) => match std::str::from_utf8(&bytes) {
+                Ok((_, bytes)) => match str::from_utf8(&bytes) {
                     Ok(a) => {
                         let Product {
                             name,
@@ -52,35 +52,25 @@ fn parse(store: &Store) -> Func {
                         if let Some(fam) = name {
                             match memory.write(family_pos, fam.as_bytes()) {
                                 Ok(bytes) => memory.write_i32(family_written, bytes as i32),
-                                _ => return Err(Trap::new("failed to write user agent family")),
+                                _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
                             }
                         }
                         if let Some(maj) = major {
                             match memory.write(major_pos, maj.as_bytes()) {
                                 Ok(bytes) => memory.write_i32(major_written, bytes as i32),
-                                _ => {
-                                    return Err(Trap::new(
-                                        "failed to write user agent major version",
-                                    ))
-                                }
+                                _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
                             }
                         }
                         if let Some(min) = minor {
                             match memory.write(minor_pos, min.as_bytes()) {
                                 Ok(bytes) => memory.write_i32(minor_written, bytes as i32),
-                                _ => {
-                                    return Err(Trap::new("failed to write user agent min version"))
-                                }
+                                _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
                             }
                         }
                         if let Some(pat) = patch {
                             match memory.write(patch_pos, pat.as_bytes()) {
                                 Ok(bytes) => memory.write_i32(patch_written, bytes as i32),
-                                _ => {
-                                    return Err(Trap::new(
-                                        "failed to write user agent patch version",
-                                    ))
-                                }
+                                _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
                             }
                         }
                     }
