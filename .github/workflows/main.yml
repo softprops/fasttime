@@ -118,7 +118,16 @@ jobs:
       with:
           name: wasm-module
           path: tests/app/target/wasm32-wasi/release
+    - name: Test Windows
+       if: matrix.os == 'windows-latest'
+       run: cargo test --locked
+       env:
+          # uap crate depends transitively an a crate that
+          # doesn't compile on windows out of the box. see
+          # https://github.com/rust-onig/rust-onig#linking
+          RUSTONIG_DYNAMIC_LIBONIG: 1
     - name: Test
+      if: matrix.os != 'windows-latest'
       run: cargo test --locked
 
   release:
