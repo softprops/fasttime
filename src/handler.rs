@@ -72,7 +72,7 @@ impl Handler {
         store: Store,
         backends: Box<dyn crate::Backends>,
         dicionaries: HashMap<String, HashMap<String, String>>,
-        ip: IpAddr,
+        ip: Option<IpAddr>,
     ) -> Result<Response<Body>, BoxError> {
         if let Some(func) = self
             .linker(store, backends, dicionaries, ip)?
@@ -93,7 +93,7 @@ impl Handler {
         store: Store,
         backends: Box<dyn crate::Backends>,
         dictionaries: HashMap<String, HashMap<String, String>>,
-        ip: IpAddr,
+        ip: Option<IpAddr>,
     ) -> Result<Linker, BoxError> {
         let wasi = Wasi::new(
             &store,
@@ -141,7 +141,7 @@ mod tests {
                     Store::new(&engine),
                     crate::backend::default(),
                     HashMap::default(),
-                    "127.0.0.1".parse()?,
+                    "127.0.0.1".parse().ok(),
                 )?;
                 assert_eq!("Welcome to Fastly Compute@Edge!", body(resp).await?);
                 Ok(())

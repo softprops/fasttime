@@ -20,6 +20,11 @@ mod memory;
 use anyhow::anyhow;
 use backend::Backends;
 use colored::Colorize;
+use core::task::{Context, Poll};
+use futures_util::{
+    future::{ready, TryFutureExt},
+    stream::{Stream, StreamExt, TryStreamExt},
+};
 use handler::Handler;
 use http::{
     header::HOST,
@@ -32,18 +37,25 @@ use hyper::{
     Server,
 };
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
+use rustls::internal::pemfile;
 use std::{
     collections::HashMap,
     error::{Error, Error as StdError},
-    fs,
+    fs::{self, File},
+    io::BufReader,
     path::{Path, PathBuf},
+    pin::Pin,
     process::exit,
     str::FromStr,
     sync::{mpsc::channel, Arc, RwLock},
     time::{Duration, SystemTime},
 };
 use structopt::StructOpt;
-use tokio::task::spawn_blocking;
+use tokio::{
+    net::{TcpListener, TcpStream},
+    task::spawn_blocking,
+};
+use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use wasmtime::{Engine, Module, Store};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -91,29 +103,54 @@ struct Opts {
     /// Edge dictionary in dictionary-name:key=value,key=value format
     #[structopt(long, short, parse(try_from_str = parse_dictionary))]
     dictionary: Vec<(String, HashMap<String, String>)>,
+    #[structopt(long)]
+    tls_cert: Option<PathBuf>,
+    #[structopt(long)]
+    tls_key: Option<PathBuf>,
     /// Watch for changes to .wasm file, reloading application when relevant
     #[structopt(long)]
     watch: bool,
 }
 
 // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
-fn rewrite_uri(req: Request<hyper::Body>) -> Result<Request<hyper::Body>, BoxError> {
+fn rewrite_uri(
+    req: Request<hyper::Body>,
+    scheme: Scheme,
+) -> Result<Request<hyper::Body>, BoxError> {
     let mut req = req;
     let mut uri = req.uri().clone().into_parts();
-    uri.scheme = Some(Scheme::HTTP);
-    uri.authority = req
-        .headers()
-        .get(HOST)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| match s.parse::<Authority>() {
-            Ok(a) => Some(a),
-            Err(e) => {
-                log::debug!("Failed to parse host header as authority: {}", e);
-                None
-            }
-        });
+    uri.scheme = Some(scheme);
+
+    uri.authority = req.uri().authority().cloned().or_else(|| {
+        req.headers()
+            .get(HOST)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| match s.parse::<Authority>() {
+                Ok(a) => Some(a),
+                Err(e) => {
+                    log::debug!("Failed to parse host header as authority: {}", e);
+                    None
+                }
+            })
+    });
     *req.uri_mut() = Uri::from_parts(uri)?;
     Ok(req)
+}
+
+struct HyperAcceptor<'a> {
+    acceptor: Pin<Box<dyn Stream<Item = Result<TlsStream<TcpStream>, anyhow::Error>> + 'a>>,
+}
+
+impl hyper::server::accept::Accept for HyperAcceptor<'_> {
+    type Conn = TlsStream<TcpStream>;
+    type Error = anyhow::Error;
+
+    fn poll_accept(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+    ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
+        Pin::new(&mut self.acceptor).poll_next(cx)
+    }
 }
 
 fn load_module(
@@ -148,12 +185,31 @@ struct State {
     dictionary: Dictionary,
 }
 
+fn tls_config(
+    cert: impl AsRef<Path>,
+    key: impl AsRef<Path>,
+) -> Result<rustls::ServerConfig, BoxError> {
+    let certs = pemfile::certs(&mut BufReader::new(File::open(cert)?));
+    let key = pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(key)?));
+    let mut cfg = rustls::ServerConfig::new(rustls::NoClientAuth::new());
+    cfg.set_single_cert(
+        certs.map_err(|_| anyhow!("unable to load tls certificate"))?,
+        key.map_err(|_| anyhow!("unable to load tls private key"))?[0].clone(),
+    )
+    .map_err(|e| anyhow!(e.to_string()))?;
+    // Configure ALPN to accept HTTP/2, HTTP/1.1 in that order.
+    cfg.set_protocols(&[b"h2".to_vec(), b"http/1.1".to_vec()]);
+    Ok(cfg)
+}
+
 async fn run(opts: Opts) -> Result<(), BoxError> {
     let Opts {
         wasm,
         port,
         backend,
         dictionary,
+        tls_cert,
+        tls_key,
         watch,
     } = opts;
     let engine = Engine::default();
@@ -161,70 +217,157 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     let module = load_module(&engine, &wasm, true)?;
 
     let addr = ([127, 0, 0, 1], port).into();
-    let state = State {
+    let state = Arc::new(RwLock::new(State {
         module,
         engine: engine.clone(),
         backend: backend.clone(),
         dictionary: dictionary.clone(),
-    };
-    // Arc because we'll be using it in multiple threads, RwLock because we only
-    // write to it when we're updating the module.
-    let state = Arc::new(RwLock::new(state));
-    let moved_state = state.clone();
-    let server = Server::try_bind(&addr)?.serve(make_service_fn(move |conn: &AddrStream| {
-        let state = moved_state.clone();
-        let client_ip = conn.remote_addr().ip();
-        async move {
-            Ok::<_, anyhow::Error>(service_fn(move |req| {
-                let State {
-                    module,
-                    engine,
-                    backend,
-                    dictionary,
-                } = state.read().unwrap().clone();
-                async move {
-                    Ok::<Response<hyper::Body>, anyhow::Error>(
-                        spawn_blocking(move || {
-                            Handler::new(rewrite_uri(req).expect("invalid uri"))
-                                .run(
-                                    &module,
-                                    Store::new(&engine),
-                                    if backend.is_empty() {
-                                        backend::default()
-                                    } else {
-                                        Box::new(backend::Proxy::new(backend.into_iter().collect()))
-                                    },
-                                    dictionary.into_iter().collect(),
-                                    client_ip,
-                                )
-                                .map_err(|e| {
-                                    log::debug!("Handler::run error: {}", e);
-                                    anyhow!(e.to_string())
-                                })
-                        })
-                        .await??,
-                    )
-                }
-            }))
-        }
     }));
+    let moved_state = state.clone();
 
-    println!(" {} Listening on http://{}", "●".bold().green(), addr);
-    if !backend.is_empty() {
-        println!("   {} Backends", "❯".dimmed());
-        for (name, host) in backend {
-            println!("     {} > {}", name, host);
+    match (tls_cert, tls_key) {
+        (Some(cert), Some(key)) => {
+            let tls_acceptor = TlsAcceptor::from(Arc::new(tls_config(cert, key)?));
+            let mut tcp = TcpListener::bind(&addr).await?;
+            let acceptor = tcp
+                .incoming()
+                .map_err(|e| anyhow!(format!("Incoming tpc request failed: {}", e)))
+                .and_then(move |s| {
+                    tls_acceptor
+                        .accept(s)
+                        .map_err(|e| anyhow!(format!("TLS Error: {:?}", e)))
+                })
+                .filter(|res| {
+                    // Ignore failed accepts
+                    ready(res.is_ok())
+                })
+                .boxed();
+            let server = Box::new(Server::builder(HyperAcceptor { acceptor }).serve(
+                make_service_fn(move |conn: &TlsStream<TcpStream>| {
+                    let state = moved_state.clone();
+                    let client_ip = conn.get_ref().0.peer_addr().ok().map(|addr| addr.ip());
+                    async move {
+                        Ok::<_, anyhow::Error>(service_fn(move |req| {
+                            let State {
+                                module,
+                                engine,
+                                backend,
+                                dictionary,
+                            } = state.read().unwrap().clone();
+
+                            async move {
+                                Ok::<Response<hyper::Body>, anyhow::Error>(
+                                    spawn_blocking(move || {
+                                        Handler::new(
+                                            rewrite_uri(req, Scheme::HTTPS).expect("invalid uri"),
+                                        )
+                                        .run(
+                                            &module,
+                                            Store::new(&engine),
+                                            if backend.is_empty() {
+                                                backend::default()
+                                            } else {
+                                                Box::new(backend::Proxy::new(
+                                                    backend.into_iter().collect(),
+                                                ))
+                                            },
+                                            dictionary.into_iter().collect(),
+                                            client_ip,
+                                        )
+                                        .map_err(|e| {
+                                            log::debug!("Handler::run error: {}", e);
+                                            anyhow!(e.to_string())
+                                        })
+                                    })
+                                    .await??,
+                                )
+                            }
+                        }))
+                    }
+                }),
+            ));
+
+            println!(" {} Listening on https://{}", "●".bold().green(), addr);
+            if !backend.is_empty() {
+                println!("   {} Backends", "❯".dimmed());
+                for (name, host) in backend {
+                    println!("     {} > {}", name, host);
+                }
+            }
+
+            // assign to something to prevent watch resources from being dropped
+            let _watcher = if watch {
+                Some(monitor(&wasm, engine, state)?)
+            } else {
+                None
+            };
+            server.await?
         }
-    }
+        _ => {
+            let server = Box::new(Server::try_bind(&addr)?.serve(make_service_fn(
+                move |conn: &AddrStream| {
+                    let state = moved_state.clone();
+                    let client_ip = Some(conn.remote_addr().ip());
+                    async move {
+                        Ok::<_, anyhow::Error>(service_fn(move |req| {
+                            let State {
+                                module,
+                                engine,
+                                backend,
+                                dictionary,
+                            } = state.read().expect("unable to lock server state").clone();
+                            async move {
+                                Ok::<Response<hyper::Body>, anyhow::Error>(
+                                    spawn_blocking(move || {
+                                        Handler::new(
+                                            rewrite_uri(req, Scheme::HTTP).expect("invalid uri"),
+                                        )
+                                        .run(
+                                            &module,
+                                            Store::new(&engine),
+                                            if backend.is_empty() {
+                                                backend::default()
+                                            } else {
+                                                Box::new(backend::Proxy::new(
+                                                    backend.into_iter().collect(),
+                                                ))
+                                            },
+                                            dictionary.into_iter().collect(),
+                                            client_ip,
+                                        )
+                                        .map_err(|e| {
+                                            log::debug!("Handler::run error: {}", e);
+                                            anyhow!(e.to_string())
+                                        })
+                                    })
+                                    .await??,
+                                )
+                            }
+                        }))
+                    }
+                },
+            )));
 
-    // assign to something to prevent watch resources from being dropped
-    let _watcher = if watch {
-        Some(monitor(&wasm, engine, state)?)
-    } else {
-        None
+            println!(" {} Listening on http://{}", "●".bold().green(), addr);
+            if !backend.is_empty() {
+                println!("   {} Backends", "❯".dimmed());
+                for (name, host) in backend {
+                    println!("     {} > {}", name, host);
+                }
+            }
+
+            // assign to something to prevent watch resources from being dropped
+            let _watcher = if watch {
+                Some(monitor(&wasm, engine, state)?)
+            } else {
+                None
+            };
+
+            server.await?;
+        }
     };
 
-    server.await?;
+    // server.await?;
 
     Ok(())
 }
@@ -319,17 +462,32 @@ mod tests {
     }
 
     #[test]
-    fn test_rewrite_uri() -> Result<(), BoxError> {
+    fn test_rewrite_uri_http() -> Result<(), BoxError> {
         let req = Request::builder()
             .uri("/foo")
             .header(HOST, "fasttime.co")
             .body(Body::empty())?;
-        let rewritten = rewrite_uri(req)?;
+        let rewritten = rewrite_uri(req, Scheme::HTTP)?;
         assert_eq!(
             rewritten.uri().authority(),
             Some(&"fasttime.co".parse::<Authority>()?)
         );
         assert_eq!(rewritten.uri().scheme().map(Scheme::as_str), Some("http"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_rewrite_uri_https() -> Result<(), BoxError> {
+        let req = Request::builder()
+            .uri("/foo")
+            .header(HOST, "fasttime.co")
+            .body(hyper::Body::empty())?;
+        let rewritten = rewrite_uri(req, Scheme::HTTPS)?;
+        assert_eq!(
+            rewritten.uri().authority(),
+            Some(&"fasttime.co".parse::<Authority>()?)
+        );
+        assert_eq!(rewritten.uri().scheme().map(Scheme::as_str), Some("https"));
         Ok(())
     }
 }
