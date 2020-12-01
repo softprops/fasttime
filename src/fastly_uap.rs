@@ -5,9 +5,9 @@ use crate::{
 };
 use fastly_shared::FastlyStatus;
 use log::debug;
-use wasmtime::{Caller, Func, Linker, Store, Trap};
 use std::str;
 use user_agent_parser::{Product, UserAgentParser};
+use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 lazy_static::lazy_static! {
     static ref UAP: UserAgentParser = UserAgentParser::from_str(include_str!("../uap.yaml")).expect("failed to parse uap.yaml");
