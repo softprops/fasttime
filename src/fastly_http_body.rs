@@ -175,7 +175,7 @@ mod tests {
                     Store::new(&engine),
                     Box::new(|backend: &str, _| {
                         assert_eq!("backend_name", backend);
-                        Ok(Response::builder().body(Body::from("👋"))?)
+                        Ok(Response::new(Body::from("👋")))
                     }),
                     HashMap::default(),
                     "127.0.0.1".parse().ok(),

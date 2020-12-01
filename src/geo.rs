@@ -102,10 +102,9 @@ impl crate::Backends for GeoBackend {
             .and_then(|hdr| hdr.to_str().ok())
             .and_then(|s| s.parse::<IpAddr>().ok())
         {
-            Some(ip) => Ok(Response::builder()
-                .status(200)
-                .body(Body::from(serde_json::to_string(&self.0.lookup(ip))?))
-                .expect("invalid response")),
+            Some(ip) => Ok(Response::new(Body::from(serde_json::to_string(
+                &self.0.lookup(ip),
+            )?))),
             _ => Err(anyhow::anyhow!("expected request containing Fastly-XQD-arg1 header").into()),
         }
     }
