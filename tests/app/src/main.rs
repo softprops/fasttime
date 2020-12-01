@@ -37,14 +37,6 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
         drop(writeln!(log, "{:?}", hdr))
     }
 
-    if let Some(ua) = req.headers().get("User-Agent") {
-        drop(writeln!(
-            log,
-            "user agent {:?}",
-            fastly::uap_parse(ua.to_str()?)
-        ));
-    }
-
     // We can filter requests that have unexpected methods.
     const VALID_METHODS: [Method; 3] = [Method::HEAD, Method::GET, Method::POST];
     if !(VALID_METHODS.contains(req.method())) {
@@ -91,6 +83,27 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
             let client_ip = fastly::downstream_client_ip_addr().unwrap();
             let geo = fastly::geo::geo_lookup(client_ip);
             Ok(Response::new(format!("ip {} {:?}", client_ip, geo).into()))
+        }
+
+        (&Method::GET, "/uap") => {
+            if let Some((name, maj, min, pat)) = req
+                .headers()
+                .get("User-Agent")
+                .and_then(|hdr| hdr.to_str().ok())
+                .and_then(|ua| fastly::uap_parse(ua).ok())
+            {
+                return Ok(Response::new(
+                    format!(
+                        "{} {} {} {}",
+                        name,
+                        maj.unwrap_or_default(),
+                        min.unwrap_or_default(),
+                        pat.unwrap_or_default()
+                    )
+                    .into(),
+                ));
+            }
+            Ok(Response::new("unkown agent".into()))
         }
 
         // If request is a `GET` to the `/backend` path, send to a named backend.
