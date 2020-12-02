@@ -5,8 +5,13 @@ use crate::{
 };
 use fastly_shared::FastlyStatus;
 use log::debug;
+use std::str;
+use user_agent_parser::{Product, UserAgentParser};
 use wasmtime::{Caller, Func, Linker, Store, Trap};
-use woothee::parser::{Parser, WootheeResult};
+
+lazy_static::lazy_static! {
+    static ref UAP: UserAgentParser = UserAgentParser::from_str(include_str!("../uap.yaml")).expect("failed to parse uap.yaml");
+}
 
 pub fn add_to_linker<'a>(
     linker: &'a mut Linker,
@@ -21,52 +26,52 @@ fn parse(store: &Store) -> Func {
         |caller: Caller<'_>,
          user_agent: i32,
          user_agent_max_len: i32,
-         family: i32,
+         family_pos: i32,
          _family_max_len: i32,
          family_written: i32,
-         major: i32,
+         major_pos: i32,
          _major_max_len: i32,
          major_written: i32,
-         minor: i32,
+         minor_pos: i32,
          _minor_max_len: i32,
          minor_written: i32,
-         patch: i32,
+         patch_pos: i32,
          _patch_max_len: i32,
          patch_written: i32| {
             debug!("fastly_uap::parse");
             let mut memory = memory!(caller);
             match memory.read(user_agent, user_agent_max_len) {
-                Ok((_, bytes)) => match std::str::from_utf8(&bytes) {
+                Ok((_, bytes)) => match str::from_utf8(&bytes) {
                     Ok(a) => {
-                        let (fam, (maj, min, pat)) = match Parser::new().parse(a) {
-                            Some(WootheeResult {
-                                category, version, ..
-                            }) => (
-                                category,
-                                match version.split('.').collect::<Vec<_>>()[..] {
-                                    [maj, min, pat] => (maj, min, pat),
-                                    [maj, min] => (maj, min, ""),
-                                    [maj] => (maj, "", ""),
-                                    _ => ("0", "0", "0"),
-                                },
-                            ),
-                            _ => ("", ("0", "0", "0")),
-                        };
-                        match memory.write(family, fam.as_bytes()) {
-                            Ok(bytes) => memory.write_i32(family_written, bytes as i32),
-                            _ => return Err(Trap::new("failed to write user agent family")),
+                        let Product {
+                            name,
+                            major,
+                            minor,
+                            patch,
+                        } = UAP.parse_product(a);
+                        if let Some(fam) = name {
+                            match memory.write(family_pos, fam.as_bytes()) {
+                                Ok(bytes) => memory.write_i32(family_written, bytes as i32),
+                                _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
+                            }
                         }
-                        match memory.write(major, maj.as_bytes()) {
-                            Ok(bytes) => memory.write_i32(major_written, bytes as i32),
-                            _ => return Err(Trap::new("failed to write user agent major version")),
+                        if let Some(maj) = major {
+                            match memory.write(major_pos, maj.as_bytes()) {
+                                Ok(bytes) => memory.write_i32(major_written, bytes as i32),
+                                _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
+                            }
                         }
-                        match memory.write(minor, min.as_bytes()) {
-                            Ok(bytes) => memory.write_i32(minor_written, bytes as i32),
-                            _ => return Err(Trap::new("failed to write user agent min version")),
+                        if let Some(min) = minor {
+                            match memory.write(minor_pos, min.as_bytes()) {
+                                Ok(bytes) => memory.write_i32(minor_written, bytes as i32),
+                                _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
+                            }
                         }
-                        match memory.write(patch, pat.as_bytes()) {
-                            Ok(bytes) => memory.write_i32(patch_written, bytes as i32),
-                            _ => return Err(Trap::new("failed to write user agent patch version")),
+                        if let Some(pat) = patch {
+                            match memory.write(patch_pos, pat.as_bytes()) {
+                                Ok(bytes) => memory.write_i32(patch_written, bytes as i32),
+                                _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
+                            }
                         }
                     }
                     _ => return Err(Trap::new("failed to read user agent")),
@@ -76,4 +81,38 @@ fn parse(store: &Store) -> Func {
             Ok(FastlyStatus::OK.code)
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        tests::{body, WASM},
+        Handler,
+    };
+    use hyper::Request;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn parse_works() -> Result<(), BoxError> {
+        match WASM.as_ref() {
+            None => Ok(()),
+            Some((engine, module)) => {
+                let resp = Handler::new(
+                    Request::get("/uap")
+                        .header("User-Agent", "curl/7.64.1")
+                        .body(Default::default())?,
+                )
+                .run(
+                    &module,
+                    Store::new(&engine),
+                    crate::backend::default(),
+                    HashMap::default(),
+                    "127.0.0.1".parse().ok(),
+                )?;
+                assert_eq!("curl 7 64 1", body(resp).await?);
+                Ok(())
+            }
+        }
+    }
 }
