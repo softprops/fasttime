@@ -88,7 +88,7 @@ fn get(
                         Ok(result) => result,
                         _ => return Err(Trap::new("failed to read dictionary name")),
                     };
-                    let key = std::str::from_utf8(&buf).unwrap();
+                    let key = str::from_utf8(&buf).unwrap();
                     debug!("getting dictionary key {}", key);
                     match dict.get(key) {
                         Some(value) => match memory.write(value_addr, &value.as_bytes()) {

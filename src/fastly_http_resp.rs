@@ -11,7 +11,7 @@ use hyper::{
     Body, Response, StatusCode,
 };
 use log::debug;
-use std::convert::TryFrom;
+use std::{convert::TryFrom, str};
 use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 pub type ResponseHandle = i32;
@@ -290,7 +290,7 @@ fn header_values_set(
                             _ => {
                                 return Err(Trap::new(format!(
                                     "Invalid header name {:?}",
-                                    std::str::from_utf8(&bytes)
+                                    str::from_utf8(&bytes)
                                 )))
                             }
                         },
@@ -304,7 +304,7 @@ fn header_values_set(
                                 return Err(Trap::new(format!(
                                     "Invalid header value for header {} {:?}",
                                     name,
-                                    std::str::from_utf8(&bytes)
+                                    str::from_utf8(&bytes)
                                 )))
                             }
                         },

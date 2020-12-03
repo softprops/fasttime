@@ -6,6 +6,7 @@ use crate::{
 };
 use fastly_shared::FastlyStatus;
 use log::debug;
+use std::str;
 use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 type EndpointHandle = i32;
@@ -37,7 +38,7 @@ fn endpoint_get(
             );
             let mut memory = memory!(caller);
             let endpoint = match memory.read(name, name_len) {
-                Ok((_, bytes)) => match std::str::from_utf8(&bytes) {
+                Ok((_, bytes)) => match str::from_utf8(&bytes) {
                     Ok(name) => name.to_owned(),
                     _ => return Err(Trap::new("Invalid endpoint name")),
                 },
@@ -80,7 +81,7 @@ fn write(
                 Some(endpoint) => {
                     let mut memory = memory!(caller);
                     let message = match memory.read(msg, msg_len) {
-                        Ok((_, bytes)) => match std::str::from_utf8(&bytes) {
+                        Ok((_, bytes)) => match str::from_utf8(&bytes) {
                             Ok(data) => data.to_owned(),
                             _ => return Err(Trap::new("Invalid endpoint name")),
                         },

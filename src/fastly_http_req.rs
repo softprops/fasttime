@@ -16,7 +16,7 @@ use hyper::{
     Body, Method, Request, Uri,
 };
 use log::debug;
-use std::{convert::TryFrom, net::IpAddr};
+use std::{convert::TryFrom, net::IpAddr, str};
 use wasmtime::{Caller, Func, Linker, Store, Trap};
 
 pub type RequestHandle = i32;
@@ -463,7 +463,7 @@ fn send(
                 Ok(result) => result,
                 _ => return Err(Trap::new("error reading backend name")),
             };
-            let backend = std::str::from_utf8(&buf).unwrap();
+            let backend = str::from_utf8(&buf).unwrap();
             debug!("backend={}", backend);
 
             let parts = handler
@@ -653,7 +653,7 @@ fn header_values_get(
                         Ok(result) => result,
                         _ => return Err(Trap::new("Failed to read header name")),
                     };
-                    let name = std::str::from_utf8(&header).unwrap();
+                    let name = str::from_utf8(&header).unwrap();
                     debug!("fastly_http_req::header_values_get {} ({})", name, cursor);
                     let mut values: Vec<_> = req
                         .headers
