@@ -20,6 +20,7 @@ mod opts;
 
 use anyhow::anyhow;
 use backend::Backends;
+use chrono::offset::Local;
 use colored::Colorize;
 use core::task::{Context, Poll};
 use futures_util::{
@@ -35,7 +36,7 @@ use http::{
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
-    Server,
+    Body, Server,
 };
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use opts::Opts;
@@ -45,11 +46,12 @@ use std::{
     error::Error,
     fs::{self, File},
     io::BufReader,
+    net::IpAddr,
     path::{Path, PathBuf},
     pin::Pin,
     process::exit,
     sync::{mpsc::channel, Arc, RwLock},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 use structopt::StructOpt;
 use tokio::{
@@ -65,9 +67,9 @@ type Dictionary = Vec<(String, HashMap<String, String>)>;
 
 // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
 fn rewrite_uri(
-    req: Request<hyper::Body>,
+    req: Request<Body>,
     scheme: Scheme,
-) -> Result<Request<hyper::Body>, BoxError> {
+) -> Result<Request<Body>, BoxError> {
     let mut req = req;
     let mut uri = req.uri().clone().into_parts();
     uri.scheme = Some(scheme);
@@ -86,6 +88,42 @@ fn rewrite_uri(
     });
     *req.uri_mut() = Uri::from_parts(uri)?;
     Ok(req)
+}
+
+fn log_prefix(
+    req: &Request<Body>,
+    client_ip: &Option<IpAddr>,
+) -> String {
+    format!(
+        "{} \"{} {} {}\"",
+        format!(
+            "{} - - [{}]",
+            client_ip
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|| "-".into()),
+            Local::now().to_rfc3339()
+        )
+        .dimmed(),
+        req.method(),
+        req.uri().path(),
+        format!("{:?}", req.version())
+    )
+}
+
+fn log_suffix(
+    resp: &Response<Body>,
+    start: Instant,
+) -> String {
+    format!(
+        "{} {}",
+        match resp.status().as_u16() {
+            redir @ 300..=399 => redir.to_string().yellow(),
+            client @ 400..=499 => client.to_string().red(),
+            server @ 500..=599 => server.to_string().red(),
+            ok => ok.to_string().green(),
+        },
+        format!("{:.2?}", start.elapsed()).dimmed()
+    )
 }
 
 struct HyperAcceptor<'a> {
@@ -205,9 +243,10 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                 backend,
                                 dictionary,
                             } = state.read().unwrap().clone();
-
                             async move {
-                                Ok::<Response<hyper::Body>, anyhow::Error>(
+                                let start = Instant::now();
+                                let log = log_prefix(&req, &client_ip);
+                                Ok::<Response<Body>, anyhow::Error>(
                                     spawn_blocking(move || {
                                         Handler::new(
                                             rewrite_uri(req, Scheme::HTTPS).expect("invalid uri"),
@@ -228,6 +267,10 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                         .map_err(|e| {
                                             log::debug!("Handler::run error: {}", e);
                                             anyhow!(e.to_string())
+                                        })
+                                        .map(|res| {
+                                            println!("{} {}", log, log_suffix(&res, start));
+                                            res
                                         })
                                     })
                                     .await??,
@@ -261,6 +304,8 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                     let client_ip = Some(conn.remote_addr().ip());
                     async move {
                         Ok::<_, anyhow::Error>(service_fn(move |req| {
+                            let start = Instant::now();
+                            let log = log_prefix(&req, &client_ip);
                             let State {
                                 module,
                                 engine,
@@ -268,7 +313,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                 dictionary,
                             } = state.read().expect("unable to lock server state").clone();
                             async move {
-                                Ok::<Response<hyper::Body>, anyhow::Error>(
+                                Ok::<Response<Body>, anyhow::Error>(
                                     spawn_blocking(move || {
                                         Handler::new(
                                             rewrite_uri(req, Scheme::HTTP).expect("invalid uri"),
@@ -289,6 +334,10 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                         .map_err(|e| {
                                             log::debug!("Handler::run error: {}", e);
                                             anyhow!(e.to_string())
+                                        })
+                                        .map(|res| {
+                                            println!("{} {}", log, log_suffix(&res, start));
+                                            res
                                         })
                                     })
                                     .await??,
@@ -386,7 +435,7 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper::body::{to_bytes, Body};
+    use hyper::body::to_bytes;
     use std::str;
 
     lazy_static::lazy_static! {

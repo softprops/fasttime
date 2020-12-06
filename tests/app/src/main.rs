@@ -33,10 +33,6 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
 
     let mut log = Endpoint::from_name("my_endpoint");
 
-    for hdr in fastly::downstream_original_header_names() {
-        drop(writeln!(log, "{:?}", hdr))
-    }
-
     // We can filter requests that have unexpected methods.
     const VALID_METHODS: [Method; 3] = [Method::HEAD, Method::GET, Method::POST];
     if !(VALID_METHODS.contains(req.method())) {
@@ -55,6 +51,12 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
             body.append(body2);
             body.write_str("last line");
             Ok(Response::new(body))
+        }
+        (&Method::GET, "/log") => {
+            for hdr in fastly::downstream_original_header_names() {
+                drop(writeln!(log, "original headers {:?}", hdr))
+            }
+            Ok(Response::new("check your logs".into()))
         }
         (&Method::GET, "/downstream_original_header_count") => Ok(Response::builder()
             .status(StatusCode::BAD_REQUEST)

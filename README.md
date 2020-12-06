@@ -136,7 +136,6 @@ RUST_LOG=fasttime=debug fasttime -w target/wasm32-wasi/release/app.wasm
 
 ## 🚧 roadmap
 
-* tls support
 * support config file based configuration
 
 Doug Tangren (softprops) 2020
