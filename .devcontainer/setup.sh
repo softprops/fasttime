@@ -28,6 +28,9 @@ cargo install cargo-expand
 # rapid dependency experimenting
 cargo install cargo-edit
 
+# hot reloading
+cargo install cargo-watch
+
 ## setup and install oh-my-zsh
 #sh -c "$(curl -fsSL https://raw.githubusercontent.com/robbyrussell/oh-my-zsh/master/tools/install.sh)"
 #cp -R /root/.oh-my-zsh /home/$USERNAME
