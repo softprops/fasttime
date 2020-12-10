@@ -15,6 +15,9 @@ apt-get install -y \
 
 ## Install rustup and common components
 curl https://sh.rustup.rs -sSf | sh -s -- -y 
+
+source $HOME/.cargo/env
+
 rustup install 1.46
 rustup component add rustfmt --toolchain nightly
 rustup component add clippy 
