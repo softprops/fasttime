@@ -36,6 +36,8 @@ Alternatively, you can also build your WASM application using Rust's standard ca
 > Fastly assumes a Rust toolchain version of `1.46.0`
 
 ```sh
+# optionally install 1.46.0 if you have not done so already
+$ rustup install 1.46.0 --profile minimal
 # optionally install the wasm32 toolchain if you have not done so already
 $ rustup target add wasm32-wasi --toolchain 1.46.0
 # build a release mode .wasm executable
