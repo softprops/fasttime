@@ -110,7 +110,7 @@ writeln!(endpoint, "hello {}", "wasm");
 
 `fasttime` currently support these by logging directly to stdout by default.
 
-### 🤝 tls
+#### 🤝 tls
 
 Using a tls certificate making tool like [mkcert](https://github.com/FiloSottile/mkcert), create a new tls certificate and private key
 
@@ -134,8 +134,47 @@ Set the `RUST_LOG` env variable to `fastime=debug` and run the cli as usual
 RUST_LOG=fasttime=debug fasttime -w target/wasm32-wasi/release/app.wasm
 ```
 
+#### ⚙️ configuration file
+
+All settings can also be put in a configuration file which can be loaded from the commandline. Commandline arguments override any settings in the config file, except backends and dictionaries, which will be merged with entries from the commandline superceding those with the same key from the config file.
+
+```sh
+$ fasttime -c my_config.toml
+```
+
+Example config file:
+
+```toml
+wasm = "my_app.wasm"
+port = 3001
+watch = true
+tls-cert = "cert.pem"
+tls-key = "key.pem"
+
+[[backend]]
+name = "backend-one"
+address = "example.net"
+
+[[backend]]
+name = "backend-two"
+address = "example.com"
+
+[[dictionary]]
+name = "dictionary-one"
+
+[dictionary.entries]
+hello = "there"
+"key with a space" = "something"
+
+[[dictionary]]
+name = "dictionary-two"
+
+[dictionary.entries]
+apples = "oranges"
+```
+
 ## 🚧 roadmap
 
-* support config file based configuration
+* list intentionally left blank.
 
 Doug Tangren (softprops) 2020

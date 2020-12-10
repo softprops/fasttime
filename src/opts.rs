@@ -37,9 +37,9 @@ pub struct Opts {
     /// TOML file to load configuration from. Commandline parameters will override
     /// the file, except for backends and dictionaries, which will be merged
     #[structopt(long, short)]
-    // Ignore configfile in TOML, because we don't support daisy chaining them
+    // Ignore config_file in TOML, because we don't support daisy chaining them
     #[serde(skip)]
-    pub(crate) configfile: Option<PathBuf>,
+    pub(crate) config_file: Option<PathBuf>,
     // For TOML, tables must go last
     /// Backend to proxy in backend-name:host format (foo:foo.org)
     #[structopt(name="backend", long, short, parse(try_from_str = parse_backend))]
@@ -54,18 +54,18 @@ pub struct Opts {
 impl Opts {
     pub(crate) fn merge_from_args_and_toml() -> Opts {
         let mut args = Opts::from_args();
-        if let Some(configfile) = &args.configfile {
-            let toml_string = std::fs::read_to_string(configfile).unwrap_or_else(|e| {
+        if let Some(config_file) = &args.config_file {
+            let toml_string = std::fs::read_to_string(config_file).unwrap_or_else(|e| {
                 // using clap's Error through StructOpt to have consistent error formatting
                 Error::with_description(
-                    &format!("Failed to read configfile: {}", (e)),
+                    &format!("Failed to read config file: {}", (e)),
                     ErrorKind::EmptyValue,
                 )
                 .exit()
             });
             let mut combined = Opts::from_args_with_toml(&toml_string).unwrap_or_else(|e| {
                 Error::with_description(
-                    &format!("Failed to parse configfile: {}", (e)),
+                    &format!("Failed to parse config file: {}", (e)),
                     ErrorKind::EmptyValue,
                 )
                 .exit()

@@ -204,7 +204,7 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
         tls_cert,
         tls_key,
         watch,
-        configfile: _,
+        config_file: _,
     } = opts;
 
     let engine = Engine::default();
