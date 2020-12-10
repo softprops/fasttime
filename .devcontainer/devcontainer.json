@@ -2,18 +2,27 @@
 	"name": "Fasttime",
 	"extensions": [
 		"cschleiden.vscode-github-actions",
-		"ms-vsliveshare.vsliveshare",
+		"github.github-vscode-theme",
 		"matklad.rust-analyzer",
+		"ms-vsliveshare.vsliveshare",
 		"serayuzgur.crates",
 		"vadimcn.vscode-lldb"
 	],
 	"dockerFile": "Dockerfile",
 	"settings": {
+		"editor.fontSize": 14,
+		"explorer.openEditors.visible": 0,
+		"editor.renderWhitespace": "all",
+		"editor.fontFamily": "Inconsolata, Menlo, Monaco, 'Courier New', monospace",
 		"editor.formatOnSave": true,
 		"terminal.integrated.shell.linux": "/usr/bin/zsh",
+		"workbench.colorTheme": "GitHub Dark",
 		"files.exclude": {
 			"**/CODE_OF_CONDUCT.md": true,
 			"**/LICENSE": true
+		},
+		"[rust]": {
+			"editor.defaultFormatter": "matklad.rust-analyzer"
 		}
 	}
 }
