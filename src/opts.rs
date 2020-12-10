@@ -5,7 +5,6 @@ use structopt::{
     StructOpt,
 };
 use structopt_toml::StructOptToml;
-use toml;
 
 use crate::{Backend, Dictionary};
 
