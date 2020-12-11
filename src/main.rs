@@ -19,7 +19,7 @@ mod memory;
 mod opts;
 
 use anyhow::anyhow;
-use backend::Backends;
+use backend::{Backend, Backends};
 use chrono::offset::Local;
 use colored::Colorize;
 use core::task::{Context, Poll};
@@ -41,6 +41,7 @@ use hyper::{
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use opts::Opts;
 use rustls::internal::pemfile;
+use serde_derive::Deserialize;
 use std::{
     collections::HashMap,
     error::Error,
@@ -53,7 +54,6 @@ use std::{
     sync::{mpsc::channel, Arc, RwLock},
     time::{Duration, Instant, SystemTime},
 };
-use structopt::StructOpt;
 use tokio::{
     net::{TcpListener, TcpStream},
     task::spawn_blocking,
@@ -62,8 +62,12 @@ use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use wasmtime::{Engine, Module, Store};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
-type Backend = Vec<(String, String)>;
-type Dictionary = Vec<(String, HashMap<String, String>)>;
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+struct Dictionary {
+    name: String,
+    entries: HashMap<String, String>,
+}
 
 // re-writing uri to add host and authority. fastly requests validate these are present before sending them upstream
 fn rewrite_uri(
@@ -170,8 +174,8 @@ fn load_module(
 struct State {
     module: Module,
     engine: Engine,
-    backend: Backend,
-    dictionary: Dictionary,
+    backends: Option<Vec<Backend>>,
+    dictionaries: HashMap<String, HashMap<String, String>>,
 }
 
 fn tls_config(
@@ -195,23 +199,37 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     let Opts {
         wasm,
         port,
-        backend,
-        dictionary,
+        backends,
+        dictionaries,
         tls_cert,
         tls_key,
         watch,
+        config_file: _,
     } = opts;
+
     let engine = Engine::default();
 
     let module = load_module(&engine, &wasm, true)?;
 
     let addr = ([127, 0, 0, 1], port).into();
+
+    // dictionaries of the same name can come from both the CLI params and config file,
+    // so merge them here. The correct order is provided in opts.rs.
+    let dictionaries: HashMap<String, HashMap<String, String>> = dictionaries
+        .unwrap_or_default()
+        .into_iter()
+        .fold(HashMap::new(), |mut map, d| {
+            map.entry(d.name).or_default().extend(d.entries.into_iter());
+            map
+        });
+
     let state = Arc::new(RwLock::new(State {
         module,
         engine: engine.clone(),
-        backend: backend.clone(),
-        dictionary: dictionary.clone(),
+        backends: backends.clone(),
+        dictionaries,
     }));
+    println!("DEBUG: {:?}", state.read().unwrap().dictionaries);
     let moved_state = state.clone();
 
     match (tls_cert, tls_key) {
@@ -240,8 +258,8 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                             let State {
                                 module,
                                 engine,
-                                backend,
-                                dictionary,
+                                backends,
+                                dictionaries,
                             } = state.read().unwrap().clone();
                             async move {
                                 let start = Instant::now();
@@ -254,14 +272,12 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                         .run(
                                             &module,
                                             Store::new(&engine),
-                                            if backend.is_empty() {
-                                                backend::default()
+                                            if let Some(backends) = backends {
+                                                Box::new(backend::Proxy::new(backends))
                                             } else {
-                                                Box::new(backend::Proxy::new(
-                                                    backend.into_iter().collect(),
-                                                ))
+                                                backend::default()
                                             },
-                                            dictionary.into_iter().collect(),
+                                            dictionaries,
                                             client_ip,
                                         )
                                         .map_err(|e| {
@@ -282,10 +298,10 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
             ));
 
             println!(" {} Listening on https://{}", "●".bold().green(), addr);
-            if !backend.is_empty() {
+            if let Some(backends) = backends {
                 println!("   {} Backends", "❯".dimmed());
-                for (name, host) in backend {
-                    println!("     {} > {}", name, host);
+                for b in backends {
+                    println!("     {} > {}", b.name, b.address);
                 }
             }
 
@@ -309,8 +325,8 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                             let State {
                                 module,
                                 engine,
-                                backend,
-                                dictionary,
+                                backends,
+                                dictionaries,
                             } = state.read().expect("unable to lock server state").clone();
                             async move {
                                 Ok::<Response<Body>, anyhow::Error>(
@@ -321,14 +337,12 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                                         .run(
                                             &module,
                                             Store::new(&engine),
-                                            if backend.is_empty() {
-                                                backend::default()
+                                            if let Some(backends) = backends {
+                                                Box::new(backend::Proxy::new(backends))
                                             } else {
-                                                Box::new(backend::Proxy::new(
-                                                    backend.into_iter().collect(),
-                                                ))
+                                                backend::default()
                                             },
-                                            dictionary.into_iter().collect(),
+                                            dictionaries,
                                             client_ip,
                                         )
                                         .map_err(|e| {
@@ -349,10 +363,10 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
             )));
 
             println!(" {} Listening on http://{}", "●".bold().green(), addr);
-            if !backend.is_empty() {
+            if let Some(backends) = backends {
                 println!("   {} Backends", "❯".dimmed());
-                for (name, host) in backend {
-                    println!("     {} > {}", name, host);
+                for b in backends {
+                    println!("     {} > {}", b.name, b.address);
                 }
             }
 
@@ -426,7 +440,7 @@ fn monitor(
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
-    if let Err(e) = run(Opts::from_args()).await {
+    if let Err(e) = run(Opts::merge_from_args_and_toml()).await {
         eprintln!(" {} error: {}", "✖".bold().red(), e);
         exit(1);
     }

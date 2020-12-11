@@ -4,7 +4,15 @@ use crate::BoxError;
 use hyper::{http::HeaderValue, Body, Request, Response};
 use log::debug;
 use reqwest::Client;
+use serde_derive::Deserialize;
 use std::collections::HashMap;
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Backend {
+    pub name: String,
+    pub address: String,
+}
+
 pub trait Backends: 'static {
     fn send(
         &self,
@@ -32,8 +40,9 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub fn new(backends: HashMap<String, String>) -> Self {
+    pub fn new(backends: Vec<Backend>) -> Self {
         let client = Client::new();
+        let backends = backends.into_iter().map(|b| (b.name, b.address)).collect();
         Proxy { backends, client }
     }
 }
