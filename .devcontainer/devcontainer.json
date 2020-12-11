@@ -25,5 +25,5 @@
 			"editor.defaultFormatter": "matklad.rust-analyzer"
 		}
 	},
-	"postStartCommand": "cd tests/app && cargo +1.46.0 build --release --target wasm32-wasi && cd ../.."
+	"postCreateCommand": "cd tests/app && cargo +1.46.0 build --release --target wasm32-wasi && cd ../.."
 }
