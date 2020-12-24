@@ -13,10 +13,8 @@ on:
     branches:
       - main
 
-defaults:
-  run:
-    env:
-      CARGO_TERM_COLOR: true
+env:
+  CARGO_TERM_COLOR:  true
 
 jobs:
   codestyle:
