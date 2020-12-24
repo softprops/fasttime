@@ -14,7 +14,7 @@ on:
       - main
 
 env:
-  CARGO_TERM_COLOR:  true
+  CARGO_TERM_COLOR:  always
 
 jobs:
   codestyle:
