@@ -13,6 +13,10 @@ on:
     branches:
       - main
 
+defaults:
+  env:
+    CARGO_TERM_COLOR: true
+
 jobs:
   codestyle:
     runs-on: ubuntu-latest
