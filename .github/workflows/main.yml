@@ -14,8 +14,9 @@ on:
       - main
 
 defaults:
-  env:
-    CARGO_TERM_COLOR: true
+  run:
+    env:
+      CARGO_TERM_COLOR: true
 
 jobs:
   codestyle:
