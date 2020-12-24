@@ -67,7 +67,7 @@ impl WriteMem for Memory {
         &mut self,
         index: i32,
         bytes: &[u8],
-    ) -> std::io::Result<usize> {
+    ) -> Result<usize> {
         (unsafe { &mut self.data_unchecked_mut()[index as usize..] }).write(bytes)
     }
 }
@@ -78,7 +78,7 @@ pub trait ReadMem {
         &mut self,
         index: i32,
         amount: i32,
-    ) -> std::io::Result<(usize, Vec<u8>)>;
+    ) -> Result<(usize, Vec<u8>)>;
 }
 
 impl ReadMem for Memory {
@@ -86,7 +86,7 @@ impl ReadMem for Memory {
         &mut self,
         index: i32,
         amount: i32,
-    ) -> std::io::Result<(usize, Vec<u8>)> {
+    ) -> Result<(usize, Vec<u8>)> {
         let mut buf = Vec::with_capacity(amount as usize);
         let mut slice = unsafe { &self.data_unchecked_mut()[index as usize..] };
         let num = (&mut slice).take(amount as u64).read_to_end(&mut buf)?;
