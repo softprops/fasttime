@@ -19,13 +19,14 @@ mod memory;
 mod opts;
 
 use anyhow::anyhow;
+use async_stream::stream;
 use backend::{Backend, Backends};
 use chrono::offset::Local;
 use colored::Colorize;
 use core::task::{Context, Poll};
 use futures_util::{
     future::{ready, TryFutureExt},
-    stream::{Stream, StreamExt, TryStreamExt},
+    stream::{Stream, StreamExt},
 };
 use handler::Handler;
 use http::{
@@ -235,22 +236,19 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
     match (tls_cert, tls_key) {
         (Some(cert), Some(key)) => {
             let tls_acceptor = TlsAcceptor::from(Arc::new(tls_config(cert, key)?));
-            let mut tcp = TcpListener::bind(&addr).await?;
-            let acceptor = tcp
-                .incoming()
-                .map_err(|e| anyhow!(format!("Incoming tpc request failed: {}", e)))
-                .and_then(move |s| {
-                    tls_acceptor
-                        .accept(s)
-                        .map_err(|e| anyhow!(format!("TLS Error: {:?}", e)))
+            let tcp = TcpListener::bind(&addr).await?;
+            let acceptor = async_stream::stream! {
+                loop {
+                    let (socket, _) = tcp.accept().await.map_err(|e|  anyhow!(format!("Incoming tpc request failed: {}", e)))?;
+                    let stream = tls_acceptor.accept(socket).map_err(|e| anyhow!(format!("TLS Error: {:?}", e)));
+                    yield stream.await;
+                }
+            }.filter(|res|  ready(res.is_ok()));
+            let server = Box::new(
+                Server::builder(HyperAcceptor {
+                    acceptor: Box::pin(acceptor),
                 })
-                .filter(|res| {
-                    // Ignore failed accepts
-                    ready(res.is_ok())
-                })
-                .boxed();
-            let server = Box::new(Server::builder(HyperAcceptor { acceptor }).serve(
-                make_service_fn(move |conn: &TlsStream<TcpStream>| {
+                .serve(make_service_fn(move |conn: &TlsStream<TcpStream>| {
                     let state = moved_state.clone();
                     let client_ip = conn.get_ref().0.peer_addr().ok().map(|addr| addr.ip());
                     async move {
@@ -294,8 +292,8 @@ async fn run(opts: Opts) -> Result<(), BoxError> {
                             }
                         }))
                     }
-                }),
-            ));
+                })),
+            );
 
             println!(" {} Listening on https://{}", "●".bold().green(), addr);
             if let Some(backends) = backends {
