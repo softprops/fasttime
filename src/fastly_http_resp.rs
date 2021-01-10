@@ -172,9 +172,9 @@ fn header_names_get(
                             memory.write_i32(
                                 ending_cursor_out,
                                 if ucursor < names.len() - 1 {
-                                    cursor + 1 as i32
+                                    cursor + 1_i32
                                 } else {
-                                    -1 as i32
+                                    -1_i32
                                 },
                             );
                         }
@@ -241,9 +241,9 @@ fn header_values_get(
                             memory.write_i32(
                                 ending_cursor_out,
                                 if ucursor < values.len() - 1 {
-                                    cursor + 1 as i32
+                                    cursor + 1_i32
                                 } else {
-                                    -1 as i32
+                                    -1_i32
                                 },
                             );
                         }

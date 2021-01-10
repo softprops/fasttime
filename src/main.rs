@@ -19,7 +19,7 @@ mod memory;
 mod opts;
 
 use anyhow::anyhow;
-use async_stream::stream;
+
 use backend::{Backend, Backends};
 use chrono::offset::Local;
 use colored::Colorize;
