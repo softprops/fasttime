@@ -626,9 +626,9 @@ checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
 
 [[package]]
 name = "fastly-shared"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c0589ab13a2e0a54eba06e4b281b6611d10eb26fc9ab2fc59d266a6f03506f2"
+checksum = "a31e6b7bc3eae372a3538281a7c38af84bdc15298cfa71badb7eb9f5cb487ae8"
 dependencies = [
  "bitflags",
  "http",
