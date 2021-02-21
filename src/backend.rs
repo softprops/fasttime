@@ -3,7 +3,7 @@
 use crate::BoxError;
 use hyper::{http::HeaderValue, Body, Request, Response};
 use log::debug;
-use reqwest::Client;
+use reqwest::{redirect::Policy, Client};
 use serde_derive::Deserialize;
 use std::collections::HashMap;
 
@@ -41,7 +41,7 @@ pub struct Proxy {
 
 impl Proxy {
     pub fn new(backends: Vec<Backend>) -> Self {
-        let client = Client::new();
+        let client = Client::builder().redirect(Policy::none()).build().unwrap();
         let backends = backends.into_iter().map(|b| (b.name, b.address)).collect();
         Proxy { backends, client }
     }
