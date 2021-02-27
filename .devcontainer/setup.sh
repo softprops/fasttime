@@ -18,7 +18,7 @@ curl https://sh.rustup.rs -sSf | sh -s -- -y
 
 source $HOME/.cargo/env
 
-rustup install 1.46
+rustup install 1.49.0
 rustup component add rustfmt --toolchain nightly
 rustup component add clippy
 
