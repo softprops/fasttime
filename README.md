@@ -31,17 +31,17 @@ The fastest way to get started with [Compute@Edge](https://www.fastly.com/produc
 $ fastly compute build
 ```
 
-Alternatively, you can also build your WASM application using Rust's standard cargo tooling. 
+Alternatively, you can also build your WASM application using Rust's standard cargo tooling.
 
-> Fastly assumes a Rust toolchain version of `1.46.0`
+> Fastly assumes a Rust toolchain version of `1.49.0`
 
 ```sh
-# optionally install 1.46.0 if you have not done so already
-$ rustup install 1.46.0 --profile minimal
+# optionally install 1.49.0 if you have not done so already
+$ rustup install 1.49.0 --profile minimal
 # optionally install the wasm32 toolchain if you have not done so already
-$ rustup target add wasm32-wasi --toolchain 1.46.0
+$ rustup target add wasm32-wasi --toolchain 1.49.0
 # build a release mode .wasm executable
-$ cargo +1.46.0 build --release --target wasm32-wasi
+$ cargo +1.49.0 build --release --target wasm32-wasi
 ```
 
 To start fasttime, just provide it with the path to your Fastly Compute@Edge `.wasm` build artifact.
@@ -71,7 +71,7 @@ $ fasttime -w target/wasm32-wasi/release/app.wasm \
 This pairs well with a `cargo watch` workflow. In another terminal, run
 
 ```sh
-$ cargo +1.46.0 watch -x 'build --release --target wasm32-wasi'
+$ cargo +1.49.0 watch -x 'build --release --target wasm32-wasi'
 ```
 
 You can then make changes to your application in your text editor, have cargo automatically rebuild your application, and have `fasttime` automatically reload it as you develop your application
@@ -90,7 +90,7 @@ $ fasttime -w target/wasm32-wasi/release/app.wasm \
 
 #### 📚 dictionaries
 
-A common way to look up key-value'd information in Fastly is to use [edge dictionaries](https://docs.fastly.com/en/guides/about-edge-dictionaries). `fasttime` supports providing multiple `-d | --dictionary` flags with values of the form `{dictionary}:{key}={value},{key2}={value2}`. 
+A common way to look up key-value'd information in Fastly is to use [edge dictionaries](https://docs.fastly.com/en/guides/about-edge-dictionaries). `fasttime` supports providing multiple `-d | --dictionary` flags with values of the form `{dictionary}:{key}={value},{key2}={value2}`.
 
 ```sh
 $ fasttime -w target/wasm32-wasi/release/app.wasm \
