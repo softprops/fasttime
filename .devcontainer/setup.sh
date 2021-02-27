@@ -14,16 +14,16 @@ apt-get install -y \
   clang
 
 ## Install rustup and common components
-curl https://sh.rustup.rs -sSf | sh -s -- -y 
+curl https://sh.rustup.rs -sSf | sh -s -- -y
 
 source $HOME/.cargo/env
 
-rustup install 1.46
+rustup install 1.49.0
 rustup component add rustfmt --toolchain nightly
-rustup component add clippy 
+rustup component add clippy
 
 # add wasm target
-rustup target add wasm32-wasi --toolchain 1.46.0
+rustup target add wasm32-wasi --toolchain 1.49.0
 
 # macro expansion debugging
 cargo install cargo-expand
