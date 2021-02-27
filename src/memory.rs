@@ -33,7 +33,7 @@ pub trait WriteMem {
         value: u32,
     );
 
-    fn write(
+    fn write_bytes(
         &mut self,
         index: i32,
         bytes: &[u8],
@@ -63,7 +63,7 @@ impl WriteMem for Memory {
         )
     }
 
-    fn write(
+    fn write_bytes(
         &mut self,
         index: i32,
         bytes: &[u8],
@@ -74,7 +74,7 @@ impl WriteMem for Memory {
 
 /// Convience api for common read operations
 pub trait ReadMem {
-    fn read(
+    fn read_bytes(
         &mut self,
         index: i32,
         amount: i32,
@@ -82,7 +82,7 @@ pub trait ReadMem {
 }
 
 impl ReadMem for Memory {
-    fn read(
+    fn read_bytes(
         &mut self,
         index: i32,
         amount: i32,

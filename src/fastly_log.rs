@@ -37,7 +37,7 @@ fn endpoint_get(
                 name, name_len, endpoint_handle_out
             );
             let mut memory = memory!(caller);
-            let endpoint = match memory.read(name, name_len) {
+            let endpoint = match memory.read_bytes(name, name_len) {
                 Ok((_, bytes)) => match str::from_utf8(&bytes) {
                     Ok(name) => name.to_owned(),
                     _ => return Err(Trap::new("Invalid endpoint name")),
@@ -80,7 +80,7 @@ fn write(
             {
                 Some(endpoint) => {
                     let mut memory = memory!(caller);
-                    let message = match memory.read(msg, msg_len) {
+                    let message = match memory.read_bytes(msg, msg_len) {
                         Ok((_, bytes)) => match str::from_utf8(&bytes) {
                             Ok(data) => data.to_owned(),
                             _ => return Err(Trap::new("Invalid endpoint name")),

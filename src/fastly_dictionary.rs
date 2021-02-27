@@ -40,7 +40,7 @@ fn open(
                 addr, len, dict_out
             );
             let mut memory = memory!(caller);
-            let (_, buf) = match memory.read(addr, len) {
+            let (_, buf) = match memory.read_bytes(addr, len) {
                 Ok(result) => result,
                 _ => return Err(Trap::new("failed to read dictionary name")),
             };
@@ -84,14 +84,14 @@ fn get(
             {
                 Some(dict) => {
                     let mut memory = memory!(caller);
-                    let (_, buf) = match memory!(caller).read(key_addr, key_len) {
+                    let (_, buf) = match memory!(caller).read_bytes(key_addr, key_len) {
                         Ok(result) => result,
                         _ => return Err(Trap::new("failed to read dictionary name")),
                     };
                     let key = str::from_utf8(&buf).unwrap();
                     debug!("getting dictionary key {}", key);
                     match dict.get(key) {
-                        Some(value) => match memory.write(value_addr, &value.as_bytes()) {
+                        Some(value) => match memory.write_bytes(value_addr, &value.as_bytes()) {
                             Ok(written) => {
                                 memory.write_i32(nwritten, written as i32);
                             }
