@@ -40,7 +40,7 @@ fn parse(store: &Store) -> Func {
          patch_written: i32| {
             debug!("fastly_uap::parse");
             let mut memory = memory!(caller);
-            match memory.read(user_agent, user_agent_max_len) {
+            match memory.read_bytes(user_agent, user_agent_max_len) {
                 Ok((_, bytes)) => match str::from_utf8(&bytes) {
                     Ok(a) => {
                         let Product {
@@ -50,25 +50,25 @@ fn parse(store: &Store) -> Func {
                             patch,
                         } = UAP.parse_product(a);
                         if let Some(fam) = name {
-                            match memory.write(family_pos, fam.as_bytes()) {
+                            match memory.write_bytes(family_pos, fam.as_bytes()) {
                                 Ok(bytes) => memory.write_i32(family_written, bytes as i32),
                                 _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
                             }
                         }
                         if let Some(maj) = major {
-                            match memory.write(major_pos, maj.as_bytes()) {
+                            match memory.write_bytes(major_pos, maj.as_bytes()) {
                                 Ok(bytes) => memory.write_i32(major_written, bytes as i32),
                                 _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
                             }
                         }
                         if let Some(min) = minor {
-                            match memory.write(minor_pos, min.as_bytes()) {
+                            match memory.write_bytes(minor_pos, min.as_bytes()) {
                                 Ok(bytes) => memory.write_i32(minor_written, bytes as i32),
                                 _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
                             }
                         }
                         if let Some(pat) = patch {
-                            match memory.write(patch_pos, pat.as_bytes()) {
+                            match memory.write_bytes(patch_pos, pat.as_bytes()) {
                                 Ok(bytes) => memory.write_i32(patch_written, bytes as i32),
                                 _ => return Err(Trap::i32_exit(FastlyStatus::ERROR.code)),
                             }

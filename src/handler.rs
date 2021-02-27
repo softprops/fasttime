@@ -7,8 +7,9 @@ use http::{request::Parts as RequestParts, response::Parts as ResponseParts};
 use hyper::{Body, Request, Response};
 use log::debug;
 use std::{cell::RefCell, collections::HashMap, net::IpAddr, rc::Rc};
+use wasi_cap_std_sync::WasiCtxBuilder;
 use wasmtime::{Linker, Module, Store, Trap};
-use wasmtime_wasi::{Wasi, WasiCtxBuilder};
+use wasmtime_wasi::Wasi;
 
 #[derive(Debug, Default)]
 pub struct Endpoint(pub String);

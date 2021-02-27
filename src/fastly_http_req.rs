@@ -212,7 +212,7 @@ fn original_header_names_get(
                 Some(hdr) => {
                     let mut bytes = hdr.as_bytes().to_vec();
                     bytes.push(0); // api requires a terminating \x00 byte
-                    let written = memory.write(buf, &bytes).unwrap();
+                    let written = memory.write_bytes(buf, &bytes).unwrap();
                     memory.write_i32(nwritten, written as i32);
                     memory.write_i32(
                         ending_cursor,
@@ -325,7 +325,7 @@ fn downstream_client_ip_addr(
                         IpAddr::V4(ip) => ip.octets().to_vec(),
                         IpAddr::V6(ip) => ip.octets().to_vec(),
                     };
-                    match memory.write(addr, &bytes) {
+                    match memory.write_bytes(addr, &bytes) {
                         Ok(written) => memory.write_i32(num_written, written as i32),
                         _ => return Err(Trap::new("failed to write ip address")),
                     }
@@ -371,7 +371,7 @@ fn method_get(
             match handler.inner.borrow().requests.get(handle as usize) {
                 Some(req) => {
                     debug!("fastly_http_req::method_get => {}", req.method);
-                    let written = match mem.write(addr, req.method.as_ref().as_bytes()) {
+                    let written = match mem.write_bytes(addr, req.method.as_ref().as_bytes()) {
                         Ok(num) => num,
                         _ => return Err(Trap::new("Failed to write request HTTP method bytes")),
                     };
@@ -392,7 +392,7 @@ fn method_set(
     Func::wrap(
         store,
         move |caller: Caller<'_>, handle: RequestHandle, addr: i32, size: i32| {
-            let (_, buf) = match memory!(caller).read(addr, size) {
+            let (_, buf) = match memory!(caller).read_bytes(addr, size) {
                 Ok(result) => result,
                 _ => return Err(Trap::new("failed to read body memory")),
             };
@@ -429,7 +429,7 @@ fn uri_get(
                 Some(request) => {
                     let uri = request.uri.to_string();
                     debug!("fastly_http_req::uri_get => {}", uri);
-                    let written = match mem.write(addr, uri.as_bytes()) {
+                    let written = match mem.write_bytes(addr, uri.as_bytes()) {
                         Ok(num) => num,
                         _ => return Err(Trap::new("failed to write method bytes")),
                     };
@@ -459,7 +459,7 @@ fn send(
               resp_body_handle_out: BodyHandle| {
             debug!("fastly_http_req::send req_handle={}, body_handle={} backend_addr={} backend_len={} resp_handle_out={} resp_body_handle_out={}", req_handle, body_handle, backend_addr, backend_len, resp_handle_out, resp_body_handle_out);
             let mut memory = memory!(caller);
-            let (_, buf) = match memory.read(backend_addr, backend_len) {
+            let (_, buf) = match memory.read_bytes(backend_addr, backend_len) {
                 Ok(result) => result,
                 _ => return Err(Trap::new("error reading backend name")),
             };
@@ -525,7 +525,7 @@ fn uri_set(
                 .get_mut(rhandle as usize)
             {
                 Some(req) => {
-                    let (_, buf) = match memory!(caller).read(addr, size) {
+                    let (_, buf) = match memory!(caller).read_bytes(addr, size) {
                         Ok(result) => result,
                         _ => return Err(Trap::new("failed to read request uri")),
                     };
@@ -605,7 +605,7 @@ fn header_names_get(
                         Some(hdr) => {
                             let mut bytes = hdr.as_bytes().to_vec();
                             bytes.push(0); // api requires a terminating \x00 byte
-                            let written = memory.write(addr, &bytes).unwrap();
+                            let written = memory.write_bytes(addr, &bytes).unwrap();
                             memory.write_i32(nwritten_out, written as i32);
                             memory.write_i32(
                                 ending_cursor_out,
@@ -649,7 +649,7 @@ fn header_values_get(
             match handler.inner.borrow_mut().requests.get_mut(handle as usize) {
                 Some(req) => {
                     let mut memory = memory!(caller);
-                    let (_, header) = match memory.read(name_addr, name_size) {
+                    let (_, header) = match memory.read_bytes(name_addr, name_size) {
                         Ok(result) => result,
                         _ => return Err(Trap::new("Failed to read header name")),
                     };
@@ -668,7 +668,7 @@ fn header_values_get(
                         Some(val) => {
                             let mut bytes = val.to_vec();
                             bytes.push(0); // api requires a terminating \x00 byte
-                            let written = memory.write(addr, &bytes).unwrap();
+                            let written = memory.write_bytes(addr, &bytes).unwrap();
                             memory.write_i32(nwritten_out, written as i32);
                             memory.write_i32(
                                 ending_cursor_out,
@@ -710,7 +710,7 @@ fn header_values_set(
             match handler.inner.borrow_mut().requests.get_mut(handle as usize) {
                 Some(req) => {
                     let mut memory = memory!(caller);
-                    let name = match memory.read(name_addr, name_size) {
+                    let name = match memory.read_bytes(name_addr, name_size) {
                         Ok((_, bytes)) => match HeaderName::from_bytes(&bytes) {
                             Ok(name) => name,
                             _ => {
@@ -723,7 +723,7 @@ fn header_values_set(
                         _ => return Err(Trap::new("failed to read header name")),
                     };
                     // values are \u{0} terminated so read 1 less byte
-                    let value = match memory.read(values_addr, values_size - 1) {
+                    let value = match memory.read_bytes(values_addr, values_size - 1) {
                         Ok((_, bytes)) => match HeaderValue::from_bytes(&bytes) {
                             Ok(value) => value,
                             _ => {

@@ -167,7 +167,7 @@ fn header_names_get(
                         Some(hdr) => {
                             let mut bytes = hdr.as_bytes().to_vec();
                             bytes.push(0); // api requires a terminating \x00 byte
-                            let written = memory.write(addr, &bytes).unwrap();
+                            let written = memory.write_bytes(addr, &bytes).unwrap();
                             memory.write_i32(nwritten_out, written as i32);
                             memory.write_i32(
                                 ending_cursor_out,
@@ -218,7 +218,7 @@ fn header_values_get(
                 .get_mut(handle as usize)
             {
                 Some(resp) => {
-                    let name = match memory.read(name_addr, name_size) {
+                    let name = match memory.read_bytes(name_addr, name_size) {
                         Ok((_, bytes)) => HeaderName::from_bytes(&bytes).unwrap(),
                         _ => return Err(Trap::new("Failed to read header name")),
                     };
@@ -236,7 +236,7 @@ fn header_values_get(
                         Some(val) => {
                             let mut bytes = val.to_vec();
                             bytes.push(0); // api requires a terminating \x00 byte
-                            let written = memory.write(addr, &bytes).unwrap();
+                            let written = memory.write_bytes(addr, &bytes).unwrap();
                             memory.write_i32(nwritten_out, written as i32);
                             memory.write_i32(
                                 ending_cursor_out,
@@ -284,7 +284,7 @@ fn header_values_set(
                 .get_mut(handle as usize)
             {
                 Some(resp) => {
-                    let name = match memory.read(name_addr, name_size) {
+                    let name = match memory.read_bytes(name_addr, name_size) {
                         Ok((_, bytes)) => match HeaderName::from_bytes(&bytes) {
                             Ok(name) => name,
                             _ => {
@@ -297,7 +297,7 @@ fn header_values_set(
                         _ => return Err(Trap::new("Failed to read header name")),
                     };
                     // values are \u{0} terminated so read one less byte
-                    let value = match memory.read(values_addr, values_size - 1) {
+                    let value = match memory.read_bytes(values_addr, values_size - 1) {
                         Ok((_, bytes)) => match HeaderValue::from_bytes(&bytes) {
                             Ok(value) => value,
                             _ => {

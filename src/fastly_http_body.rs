@@ -100,7 +100,7 @@ fn write(
             match handler.inner.borrow_mut().bodies.get_mut(handle as usize) {
                 Some(body) => {
                     let mut mem = memory!(caller);
-                    let (read, buf) = match mem.read(addr, size) {
+                    let (read, buf) = match mem.read_bytes(addr, size) {
                         Ok((num, buf)) => (num, buf),
                         _ => return Err(Trap::new("Failed to read body memory")),
                     };
@@ -139,7 +139,7 @@ fn read(
             {
                 Some(body) => {
                     let mut memory = memory!(caller);
-                    match memory.write(buf, body.as_ref()) {
+                    match memory.write_bytes(buf, body.as_ref()) {
                         Ok(written) => {
                             debug!("fastly_http_body::read write {} bytes", written);
                             memory.write_i32(nread_out, written as i32);
